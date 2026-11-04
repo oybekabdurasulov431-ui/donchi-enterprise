@@ -1,0 +1,1 @@
+{"name": "DONCHI Enterprise", "short_name": "DONCHI", "description": "Savdo, ombor va nasiya boshqaruv tizimi", "start_url": "/app/", "display": "standalone", "background_color": "#08362f", "theme_color": "#0b5d4f", "icons": [{"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}]}

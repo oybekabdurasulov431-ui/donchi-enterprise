@@ -1,0 +1,20 @@
+DONCHI CLEAN START 1.1 — TEZ ISHGA TUSHIRISH
+
+1. ZIP ni Extract All qiling.
+2. Papka ichida PowerShell oching.
+3. .\START_WINDOWS.bat
+4. Birinchi ochilganda oybek.py Super Admin uchun parol kiriting.
+   So\u02bbragan 12345 ni faqat kompyuteringizda sinov uchun tanlashingiz mumkin,
+   ammo bu juda zaif, hosting va GitHub uchun tavsiya etilmaydi.
+5. Brauzer: http://127.0.0.1:8787/platform/
+6. Endi do\u02bbkonlar soni 0. Ularni Super Admin\u02bbdan o\u02bbzingiz ochasiz.
+
+ESKI MA\u02bBLUMOTLARNI TOZALASH:
+1. Ctrl+C bilan eski serverni to\u02bbxtating.
+2. Eski data/ papkasini yangisiga ko\u02bbchirib olish shart emas.
+3. Agar eski bazani aynan yangi papkaga ko\u02bbchirgan bo\u02bblsangiz,
+   .\RESET_DONCHI.bat ni ishga tushiring.
+4. TOZALA yozish bilan faol bazadan hamma yozuvlar olib tashlanadi;
+   eski baza backups/ papkaga saqlanadi.
+
+GitHub\u02bbga data/ yoki backups/ yuklamang.

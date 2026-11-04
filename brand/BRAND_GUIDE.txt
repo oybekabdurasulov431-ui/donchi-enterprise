@@ -1,0 +1,21 @@
+DONCHI ENTERPRISE — BRAND GUIDE v1.0
+
+Nom: DONCHI
+Mahsulot: DONCHI Enterprise
+Slogan: Savdo, ombor va nasiya nazorati
+
+Ranglar:
+  Deep Emerald  #0B5D4F
+  Emerald       #087F62
+  Wheat Gold    #E5A325
+  Deep Slate    #17372F
+  Off White     #F9FBF9
+
+Logotiplar:
+  DONCHI-logo-horizontal.svg  — original vektor, gorizontal
+  DONCHI-logo-horizontal.png  — shaffof fonli PNG
+  DONCHI-icon.svg            — sayt favicon, PWA ikonkasi
+  DONCHI-icon-512.png        — ilova ikonkasi, PNG
+  concept-3d-reference.png   — avvalgi 3D konsept rasm, faqat referens
+
+Eslatma: ® belgisi ishlatilmagan; savdo belgisi va domenni xarid qilishdan oldin mavjudligi tekshirilishi kerak.

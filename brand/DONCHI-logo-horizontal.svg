@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 230" role="img" aria-label="DONCHI Enterprise logo">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0B5D4F"/><stop offset="1" stop-color="#05332B"/></linearGradient><linearGradient id="w" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FFE08A"/><stop offset="1" stop-color="#E4A126"/></linearGradient></defs>
+<rect x="12" y="14" width="196" height="196" rx="44" fill="url(#g)"/>
+<path d="M65 56H112C152 56 178 77 178 110S154 166 112 166H65V56Z" fill="none" stroke="#F7FBF8" stroke-width="18" stroke-linejoin="round"/>
+<path d="M78 153c35-5 56-17 82-35" stroke="url(#w)" stroke-width="10" fill="none" stroke-linecap="round"/>
+<path d="M91 142c16-20 23-34 25-62" fill="none" stroke="url(#w)" stroke-width="4.5"/>
+<path d="M114 88c-19-1-22-12-21-21 18 3 22 12 21 21Zm-7 19c-18 0-23-10-23-21 19 2 24 11 23 21Zm-10 19c-19 0-23-12-22-21 19 2 23 12 22 21Zm19-42c15-4 20-13 18-23-15 5-20 13-18 23Zm-8 21c17-4 21-14 19-24-18 5-21 14-19 24Z" fill="url(#w)"/>
+<text x="250" y="124" font-family="Arial,Inter,sans-serif" font-size="105" font-weight="900" letter-spacing="-5" fill="#0B5D4F">DON</text><text x="490" y="124" font-family="Arial,Inter,sans-serif" font-size="105" font-weight="900" letter-spacing="-5" fill="#E4A126">CHI</text>
+<text x="252" y="172" font-family="Arial,Inter,sans-serif" font-size="22" letter-spacing="1.4" font-weight="700" fill="#334155">SAVDO • OMBOR • NASIYA</text></svg>

@@ -1,0 +1,44 @@
+# User and customer data; never commit
+/data/
+**/*.sqlite
+**/*.sqlite3
+**/*.sqlite3-*
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/*.db-journal
+/backups/
+/backup/
+*.bak
+
+# Secrets and certificates
+.env
+.env.*
+!.env.example
+*.secret
+*.pem
+*.pfx
+*.p12
+*.key
+*.token
+credentials*.json
+
+# Python and virtual environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.envrc
+.pytest_cache/
+.coverage
+
+# Local IDE, OS and logs
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+
+# Reset archives and private first-run state
+/backups/
+DONCHI_ACCOUNT.txt
