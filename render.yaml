@@ -1,12 +1,9 @@
-# DONCHI Enterprise — Render Python demo (not for production data)
+# DONCHI Enterprise — Render Docker demo (temporary SQLite storage only).
+# The name differs from old failed Python/Rust service to prevent configuration clashes.
 services:
   - type: web
-    name: donchi-python-demo
-    runtime: python
+    name: donchi-docker-demo
+    runtime: docker
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: python -m uvicorn server:app --host 0.0.0.0 --port $PORT
+    dockerfilePath: ./Dockerfile
     healthCheckPath: /api/health
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.13.5
