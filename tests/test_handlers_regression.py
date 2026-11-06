@@ -124,6 +124,75 @@ class HandlersRegression(unittest.TestCase):
         self.ok(self.admin.get("/app.js"))
         self.ok(self.admin.post("/api/stores",json={"name":"","username":"bad","owner_name":"x","password":"short"}),422)
 
+    def test_05_tenant_isolation_and_financial_integrity(self):
+        # Two independent customers must never see or change one another's data.
+        shops = []
+        owners = []
+        for suffix in ("alpha", "beta"):
+            shop_id = self.ok(self.admin.post("/api/stores", json={
+                "name": f"Isolated {suffix}", "username": f"owner_{suffix}",
+                "owner_name": f"Owner {suffix}", "password": OWNER_PASSWORD, "plan": "Business"
+            }))["store_id"]
+            shop_client = TestClient(server.app)
+            self.ok(shop_client.post("/api/login", json={
+                "username": f"owner_{suffix}", "password": OWNER_PASSWORD
+            }))
+            shops.append(shop_id)
+            owners.append(shop_client)
+
+        alpha, beta = owners
+        self.ok(alpha.get("/api/bootstrap", headers={"X-Store-ID": shops[1]}), 403)
+        self.ok(beta.get("/api/bootstrap", headers={"X-Store-ID": shops[0]}), 403)
+        self.ok(alpha.post("/api/products", json={
+            "name": "Cross-tenant", "sku": "A-FAIL", "unit": "dona",
+            "price": 10, "stock": 1
+        }, headers={"X-Store-ID": shops[1]}), 403)
+        self.ok(alpha.get("/api/platform-admin/settings"), 403)
+
+        pid = self.ok(alpha.post("/api/products", json={
+            "name": "Single item", "sku": "A-ONE", "unit": "dona",
+            "price": 100, "cost": 50, "stock": 1
+        }))["id"]
+        self.ok(alpha.post("/api/shifts/open", json={"opening_cash": 0}))
+        client_id = str(uuid.uuid4())
+        sale = {
+            "client_id": client_id, "lines": [{"product_id": pid, "qty": 2}],
+            "cash_paid": 200, "card_paid": 0
+        }
+        self.ok(alpha.post("/api/sales", json=sale), 409)  # cannot oversell
+        sale["lines"][0]["qty"] = 1
+        sale["cash_paid"] = 100
+        first = self.ok(alpha.post("/api/sales", json=sale))
+        second = self.ok(alpha.post("/api/sales", json=sale))
+        self.assertEqual(first["id"], second["id"])
+        self.assertTrue(second.get("duplicate"))
+        self.ok(alpha.post("/api/sales", json={**sale, "client_id": str(uuid.uuid4())}), 409)
+        self.ok(alpha.post("/api/inventory/adjust", json={
+            "product_id": pid, "delta": -1, "reason": "Tekshiruv"
+        }), 409)
+        alpha_data = self.ok(alpha.get("/api/bootstrap"))["data"]
+        beta_data = self.ok(beta.get("/api/bootstrap"))["data"]
+        self.assertEqual(next(x for x in alpha_data["products"] if x["id"] == pid)["stock"], 0)
+        self.assertFalse(any(x["id"] == pid for x in beta_data.get("products", [])))
+
+        # A forged cross-origin mutation must be rejected when using browser cookies.
+        self.ok(alpha.post("/api/expenses", json={
+            "category": "Test", "amount": 1
+        }, headers={"Origin": "https://attacker.invalid"}), 403)
+
+    def test_06_validation_and_permissions(self):
+        self.ok(self.admin.post("/api/stores", json={
+            "name": "Wrong plan", "username": "wrong_plan",
+            "owner_name": "Test", "password": OWNER_PASSWORD, "plan": "FakePlan"
+        }), 422)
+        self.ok(self.admin.post("/api/products", json={
+            "name": "Forbidden", "sku": "FORBIDDEN", "unit": "qop",
+            "price": 1, "stock": 1
+        }), 403)
+        no_session = TestClient(server.app)
+        self.ok(no_session.get("/api/bootstrap"), 401)
+        self.ok(no_session.get("/api/platform-admin/backup"), 401)
+
 
 if __name__=="__main__":
     unittest.main(verbosity=2)
