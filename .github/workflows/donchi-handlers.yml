@@ -36,6 +36,6 @@ jobs:
       - name: Install Chromium browser test dependencies
         run: |
           pip install 'playwright>=1.54,<2'
-          python -m playwright install --with-deps chromium
+          python -m playwright install chromium
       - name: Exercise Super Admin and Store UI in Chromium
         run: python tests/browser_smoke.py
