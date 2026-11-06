@@ -62,8 +62,14 @@ try:
                 if errors:
                     raise AssertionError(f"{username}/{section}: browser errors: {errors}")
             if username=="admin_smoke":
-                page.goto(url+"/platform/settings.html",wait_until="domcontentloaded")
-                page.locator("#tabs .tab").first.wait_for(timeout=12000)
+                api_status=[]
+                page.on("response",lambda response: api_status.append([response.status,response.url]) if "/api/" in response.url else None)
+                resp=page.goto(url+"/platform/settings.html",wait_until="domcontentloaded")
+                page.wait_for_timeout(900)
+                print("STANDALONE STATUS",resp.status,"URL",page.url,flush=True)
+                print("STANDALONE BODY",page.locator("body").inner_text()[:1200],flush=True)
+                print("STANDALONE API",api_status,"ERRORS",errors,flush=True)
+                page.locator("#tabs .tab").first.wait_for(timeout=6000)
                 for label in ["Profil","Xavfsizlik","Platforma","Tariflar","Bildirishnomalar","Audit","Zaxira nusxa","Monitoring"]:
                     page.get_by_role("button",name=label,exact=True).click()
                     page.locator(".card").first.wait_for(timeout=5000)
