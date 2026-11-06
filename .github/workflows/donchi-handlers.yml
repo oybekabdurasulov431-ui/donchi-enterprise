@@ -32,3 +32,9 @@ jobs:
           node -e "const s=require('fs').readFileSync('web/platform/settings.html','utf8'); new Function(s.match(/<script>([\s\S]*?)<\/script>/)[1]);"
       - name: Run database-isolated handler regression
         run: python -m unittest discover -s tests -p 'test_handlers_regression.py' -v
+      - name: Install Chromium browser test dependencies
+        run: |
+          pip install 'playwright>=1.54,<2'
+          python -m playwright install --with-deps chromium
+      - name: Exercise Super Admin and Store UI in Chromium
+        run: python tests/browser_smoke.py
