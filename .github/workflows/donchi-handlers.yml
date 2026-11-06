@@ -3,7 +3,7 @@ on:
   push:
     branches:
       - main
-      - fix/donchi-handler-regression-20261106
+      - 'improve/**'
   pull_request:
     branches:
       - main
