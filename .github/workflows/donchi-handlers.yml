@@ -1,0 +1,41 @@
+name: DONCHI Handler Regression
+on:
+  push:
+    branches:
+      - main
+      - fix/donchi-handler-regression-20261106
+  pull_request:
+    branches:
+      - main
+jobs:
+  handlers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Verify Python compiles
+        run: python -m compileall -q server.py v5_features.py platform_admin.py hosted_bootstrap.py
+      - name: Check browser JavaScript syntax
+        run: |
+          node --check web/app.js
+          node --check web/v5.js
+          node --check web/platform-admin.js
+          node --check web/sw.js
+          node --check web/platform/settings.js
+          python -c "from pathlib import Path; s=Path('web/platform/settings.html').read_text(); assert '<script src=' in s and '<script>' not in s"
+      - name: Run database-isolated handler regression
+        run: python -m unittest discover -s tests -p 'test_handlers_regression.py' -v
+      - name: Install Chromium browser test dependencies
+        run: |
+          pip install 'playwright>=1.54,<2'
+          python -m playwright install --with-deps chromium
+      - name: Exercise Super Admin and Store UI in Chromium
+        run: python tests/browser_smoke.py
