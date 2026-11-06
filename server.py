@@ -407,6 +407,7 @@ def create_store(payload:StoreCreate,user=Depends(get_user)):
     name=clean_name(payload.name)
     login_name=clean_name(payload.username,40).lower()
     if not re.fullmatch(r'[a-z0-9_.-]{3,40}',login_name): http(422,'Login faqat a-z, 0-9 va ._- belgilaridan iborat bo‘lsin')
+    if payload.plan not in ('Start','Business','Premium','Enterprise'): http(422,'Bunday tarif mavjud emas')
     if len(payload.password)<10: http(422,'Parol kamida 10 belgidan iborat bo‘lsin')
     with connection(write=True) as db:
         if onerow(db,'SELECT id FROM users WHERE username=?',(login_name,)): http(409,'Bu login band')
