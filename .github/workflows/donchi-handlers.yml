@@ -1,0 +1,34 @@
+name: DONCHI Handler Regression
+on:
+  push:
+    branches:
+      - main
+      - fix/donchi-handler-regression-20261106
+  pull_request:
+    branches:
+      - main
+jobs:
+  handlers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Verify Python compiles
+        run: python -m compileall -q server.py v5_features.py platform_admin.py hosted_bootstrap.py
+      - name: Check browser JavaScript syntax
+        run: |
+          node --check web/app.js
+          node --check web/v5.js
+          node --check web/platform-admin.js
+          node --check web/sw.js
+          node -e "const s=require('fs').readFileSync('web/platform/settings.html','utf8'); new Function(s.match(/<script>([\s\S]*?)<\/script>/)[1]);"
+      - name: Run database-isolated handler regression
+        run: python -m unittest discover -s tests -p 'test_handlers_regression.py' -v
