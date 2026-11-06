@@ -68,6 +68,20 @@ class HandlersRegression(unittest.TestCase):
         self.ok(owner.post("/api/users",json={"username":"seller_regression","full_name":"Seller","role":"seller","password":"OnlyTest_Seller_2026!"}))
         product=self.ok(owner.post("/api/products",json={"name":"Feed","sku":"FEED-001","unit":"qop","price":90000,"cost":60000,"stock":10,"min_stock":1}))["id"]
         customer=self.ok(owner.post("/api/customers",json={"name":"Client One","phone":"998900000001"}))["id"]
+        original_branch=self.ok(owner.get("/api/bootstrap"))["data"]["branches"][0]["id"]
+        second_branch=self.ok(owner.post("/api/v5/branches",json={"name":"Second Branch","address":"Demo street"}))["id"]
+        self.ok(owner.post("/api/v5/branches/transfer",json={
+            "from_branch":original_branch,"to_branch":second_branch,"product_id":product,"qty":2
+        }))
+        self.ok(owner.post("/api/v5/lots",json={"product_id":product,"branch_id":original_branch,
+            "lot_code":"LOT-001","qty":3,"unit_cost":60000}))
+        delivery=self.ok(owner.post("/api/v5/deliveries",json={"customer_id":customer,"destination":"Test street","fee":5000}))["id"]
+        self.ok(owner.post(f"/api/v5/deliveries/{delivery}/status",json={"status":"assigned"}))
+        bill=self.ok(owner.post("/api/v5/bills",json={"supplier":"Test Supplier","amount":50000}))["id"]
+        self.ok(owner.post(f"/api/v5/bills/{bill}/pay",json={"amount":10000}))
+        self.ok(owner.put(f"/api/v5/customers/{customer}/crm",json={
+            "tag":"VIP","notes":"Automation test","credit_limit":200000,"loyalty_points":10
+        }))
         self.ok(owner.post("/api/shifts/open",json={"opening_cash":1000}))
         sale=self.ok(owner.post("/api/sales",json={
             "client_id":str(uuid.uuid4()),"customer_id":customer,
