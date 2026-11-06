@@ -36,9 +36,10 @@ class HandlersRegression(unittest.TestCase):
 
     def ok(self, response, code=200):
         self.assertEqual(response.status_code, code, response.text[:1500])
-        if code == 200:
+        if code == 200 and "application/json" in response.headers.get("content-type", ""):
             self.assertTrue(response.json().get("ok", True))
-        return response.json() if code == 200 else {}
+            return response.json()
+        return {}
 
     def test_01_public_and_admin_handlers(self):
         self.ok(self.admin.get("/api/health"))
@@ -102,7 +103,6 @@ class HandlersRegression(unittest.TestCase):
         self.ok(self.admin.get("/api/bootstrap"))
 
     def test_04_validation_permissions_and_static_routes(self):
-        self.ok(self.admin.post("/api/products",json={}),401) if False else None
         self.ok(self.admin.get("/api/health"))
         self.ok(self.admin.get("/platform/"))
         self.ok(self.admin.get("/platform/settings.html"))
