@@ -5,6 +5,7 @@ Runs against a throwaway SQLite database; no production accounts or data.
 import os
 import sys
 import tempfile
+import time
 import unittest
 import uuid
 from pathlib import Path
@@ -192,6 +193,39 @@ class HandlersRegression(unittest.TestCase):
         no_session = TestClient(server.app)
         self.ok(no_session.get("/api/bootstrap"), 401)
         self.ok(no_session.get("/api/platform-admin/backup"), 401)
+
+    def test_07_2fa_revokes_old_sessions_and_bearer_tokens(self):
+        # The first browser remains authenticated after enabling 2FA, but
+        # other browsers and old bearer tokens must be invalidated.
+        from platform_admin import _otp
+        second = TestClient(server.app)
+        old_login = self.ok(second.post("/api/login", json={
+            "username": "tester", "password": ADMIN_PASSWORD
+        }))
+        old_bearer = old_login["token"]
+        self.ok(second.get("/api/bootstrap"))
+        secret = self.ok(self.admin.post("/api/platform-admin/2fa/start"))["secret"]
+        code = _otp(secret, int(time.time() // 30))
+        self.ok(self.admin.post("/api/platform-admin/2fa/confirm", json={"code": code}))
+        self.ok(self.admin.get("/api/platform-admin/settings"))
+        self.ok(second.get("/api/bootstrap"), 401)
+        unauth = TestClient(server.app)
+        self.ok(unauth.get("/api/bootstrap", headers={
+            "Authorization": "Bearer " + old_bearer
+        }), 401)
+        self.ok(unauth.post("/api/login", json={
+            "username": "tester", "password": ADMIN_PASSWORD
+        }), 401)
+        # A fresh TOTP login should succeed. The code must not be replayed,
+        # so test the current auth session instead of consuming it at login.
+        disable_code = _otp(secret, int(time.time() // 30))
+        self.ok(self.admin.post("/api/platform-admin/2fa/disable", json={
+            "code": disable_code, "current_password": ADMIN_PASSWORD
+        }))
+        self.ok(self.admin.get("/api/bootstrap"))
+        self.ok(unauth.post("/api/login", json={
+            "username": "tester", "password": ADMIN_PASSWORD
+        }))
 
 
 if __name__=="__main__":
