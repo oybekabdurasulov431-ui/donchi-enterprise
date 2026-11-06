@@ -803,7 +803,19 @@ def update_inquiry(inquiry_id:str,payload:InquiryStatus,user=Depends(get_user)):
 extra_summary,smart_insights,branch_for,stock_at,adjust_branch,consume_lots = __import__('v5_features').install(app)
 
 @app.get('/api/health')
-def health():return {'ok':True,'service':'DONCHI 1.0','time':now()}
+def health():
+    """Readiness: verify SQLite is actually accessible before reporting success."""
+    try:
+        with connection() as db:
+            db.execute('SELECT 1 FROM users LIMIT 1').fetchone()
+    except sqlite3.Error:
+        # Never expose DB paths, statements or credentials in public responses.
+        return JSONResponse(
+            status_code=503,
+            content={'ok': False, 'service': 'DONCHI 1.0', 'status': 'database_unavailable'},
+            headers={'Cache-Control': 'no-store', 'Retry-After': '10'},
+        )
+    return {'ok': True, 'service': 'DONCHI 1.0', 'status': 'ready', 'time': now()}
 
 # The web UI is intentionally served from the same origin as the API.
 from platform_admin import totp_required, verify_login_totp
