@@ -15,4 +15,4 @@ RUN mkdir -p /app/data \
 USER donchi
 
 EXPOSE 10000
-CMD ["sh", "-c", "exec python -m uvicorn server:app --host 0.0.0.0 --port ${PORT:-10000}"]
+CMD ["sh", "-c", "python hosted_bootstrap.py && exec python -m uvicorn server:app --host 0.0.0.0 --port ${PORT:-10000}"]
