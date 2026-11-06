@@ -180,8 +180,8 @@ def seed():
 
 seed()
 
-class Login(BaseModel): username:str; password:str
-class ChangePassword(BaseModel): old_password:str; new_password:str
+class Login(BaseModel): username:str; password:str; totp:Optional[str]=None
+class ChangePassword(BaseModel): old_password:str; new_password:str; totp:Optional[str]=None
 class StoreCreate(BaseModel): name:str; username:str; owner_name:str; password:str; plan:str='Start'
 class ProductIn(BaseModel): name:str; sku:str; category:str=''; unit:str='qop'; price:float; cost:float=0; stock:float=0; min_stock:float=0
 class CustomerIn(BaseModel): id:Optional[str]=None; name:str; phone:str=''; address:str=''
@@ -338,6 +338,13 @@ def login(payload:Login, request:Request, response:Response):
                 until=(datetime.now(timezone.utc)+timedelta(minutes=5)).isoformat(timespec='seconds') if failed>=8 else ''
                 wdb.execute('INSERT INTO login_guards(login_key,failed,locked_until,last_failed) VALUES(?,?,?,?) ON CONFLICT(login_key) DO UPDATE SET failed=excluded.failed,locked_until=excluded.locked_until,last_failed=excluded.last_failed',(key,failed,until,now()))
             http(401,'Login yoki parol noto‘g‘ri')
+        if u['role']=='superadmin' and not verify_login_totp(u['id'],payload.totp):
+            with connection(write=True) as wdb:
+                old=onerow(wdb,'SELECT * FROM login_guards WHERE login_key=?',(key,))
+                failed=(old['failed'] if old else 0)+1
+                until=(datetime.now(timezone.utc)+timedelta(minutes=5)).isoformat(timespec='seconds') if failed>=8 else ''
+                wdb.execute('INSERT INTO login_guards(login_key,failed,locked_until,last_failed) VALUES(?,?,?,?) ON CONFLICT(login_key) DO UPDATE SET failed=excluded.failed,locked_until=excluded.locked_until,last_failed=excluded.last_failed',(key,failed,until,now()))
+            http(401,'2FA kodi noto‘g‘ri yoki kiritilmagan')
         with connection(write=True) as wdb:wdb.execute('DELETE FROM login_guards WHERE login_key=?',(key,))
         safe={k:u[k] for k in ['id','username','full_name','role','store_id']}
         raw=save_browser_session(u)
@@ -347,6 +354,7 @@ def login(payload:Login, request:Request, response:Response):
 @app.post('/api/account/password')
 def change_password(payload:ChangePassword,response:Response,user=Depends(get_user)):
     if len(payload.new_password)<10: http(422,'Parol kamida 10 ta belgidan iborat bo‘lsin')
+    if user['role']=='superadmin' and totp_required(user['id']) and not verify_login_totp(user['id'],payload.totp): http(403,'Parolni yangilash uchun 2FA kodi kerak')
     with connection(write=True) as db:
         u=onerow(db,'SELECT password_hash FROM users WHERE id=?',(user['id'],))
         if not checkpwd(payload.old_password,u['password_hash']): http(400,'Eski parol noto‘g‘ri')
@@ -423,7 +431,7 @@ def set_store_status(store_id:str,payload:dict=Body(...),user=Depends(get_user))
 @app.post('/api/stores/{store_id}/plan')
 def set_store_plan(store_id:str,payload:StorePlan,user=Depends(get_user)):
     role(user,['superadmin'])
-    if payload.plan not in ('Start','Business','Premium'):http(422,'Tarif noto‘g‘ri')
+    if payload.plan not in ('Start','Business','Premium','Enterprise'):http(422,'Tarif noto‘g‘ri')
     with connection(write=True) as db:
         if not onerow(db,'SELECT id FROM stores WHERE id=?',(store_id,)):http(404,'Do‘kon topilmadi')
         db.execute('UPDATE stores SET plan=? WHERE id=?',(payload.plan,store_id))
@@ -797,4 +805,6 @@ extra_summary,smart_insights,branch_for,stock_at,adjust_branch,consume_lots = __
 def health():return {'ok':True,'service':'DONCHI 1.0','time':now()}
 
 # The web UI is intentionally served from the same origin as the API.
+from platform_admin import totp_required, verify_login_totp
+
 app.mount('/',StaticFiles(directory=BASE/'web',html=True),name='web')
