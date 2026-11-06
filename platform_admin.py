@@ -48,6 +48,26 @@ def verify_login_totp(user_id,code):
         db.execute('UPDATE platform_totp SET last_used=? WHERE user_id=?',(counter,user_id))
     return True
 
+def _rotate_admin_sessions(db, request, user):
+    """Keep the verified current browser session, invalidate all others.
+
+    Also increments the account session version to invalidate legacy bearer
+    tokens issued before a 2FA security change.
+    """
+    raw = request.cookies.get(COOKIE_NAME, '')
+    if not raw:
+        raise HTTPException(403, 'Xavfsizlik sozlamasi uchun brauzer sessiyasi kerak')
+    token_hash = hashlib.sha256(raw.encode()).hexdigest()
+    current = onerow(db, 'SELECT token_hash FROM device_sessions WHERE token_hash=? AND user_id=? AND revoked_at IS NULL', (token_hash, user['id']))
+    if not current:
+        raise HTTPException(403, 'Faol brauzer sessiyasi talab qilinadi')
+    version = user['session_version'] + 1
+    db.execute('UPDATE users SET session_version=? WHERE id=?', (version, user['id']))
+    db.execute('UPDATE device_sessions SET revoked_at=? WHERE user_id=? AND token_hash<>? AND revoked_at IS NULL',
+               (int(time.time()), user['id'], token_hash))
+    db.execute('UPDATE device_sessions SET session_version=? WHERE token_hash=?', (version, token_hash))
+
+
 class ProfileIn(BaseModel):
     username:str=Field(min_length=4,max_length=60)
     full_name:str=Field(min_length=2,max_length=120)
@@ -180,24 +200,26 @@ def pa_2fa_start(user=Depends(get_user)):
     return {'secret':secret,'uri':uri}
 
 @app.post('/api/platform-admin/2fa/confirm')
-def pa_2fa_confirm(body:OTPIn,user=Depends(get_user)):
+def pa_2fa_confirm(body:OTPIn,request:Request,user=Depends(get_user)):
     _admin(user)
     with connection(write=True) as db:
         row=onerow(db,'SELECT secret,enabled FROM platform_totp WHERE user_id=?',(user['id'],))
         if not row or row['enabled'] or _otp_counter(row['secret'],body.code) is None:
             raise HTTPException(400,'Kod noto‘g‘ri yoki 2FA allaqachon yoqilgan')
+        _rotate_admin_sessions(db, request, user)
         db.execute('UPDATE platform_totp SET enabled=1,last_used=-1 WHERE user_id=?',(user['id'],))
         audit(db,None,user,'PLATFORM_2FA_ENABLED',{})
     return {'ok':True}
 
 @app.post('/api/platform-admin/2fa/disable')
-def pa_2fa_disable(body:DisableOTP,user=Depends(get_user)):
+def pa_2fa_disable(body:DisableOTP,request:Request,user=Depends(get_user)):
     _admin(user)
     with connection(write=True) as db:
         account=onerow(db,'SELECT password_hash FROM users WHERE id=?',(user['id'],))
         row=onerow(db,'SELECT secret,enabled FROM platform_totp WHERE user_id=?',(user['id'],))
         if not account or not checkpwd(body.current_password,account['password_hash']) or not row or not row['enabled'] or _otp_counter(row['secret'],body.code) is None:
             raise HTTPException(403,'Parol yoki 2FA kodi noto‘g‘ri')
+        _rotate_admin_sessions(db, request, user)
         db.execute('DELETE FROM platform_totp WHERE user_id=?',(user['id'],))
         audit(db,None,user,'PLATFORM_2FA_DISABLED',{})
     return {'ok':True}
