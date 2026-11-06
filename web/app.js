@@ -74,8 +74,12 @@ async function load(){
   try{
     const result=await request('/bootstrap');
     state.data=result.data;state.stores=result.stores||[];state.branchId=result.data?.branch_id||state.branchId; if(state.branchId)localStorage.setItem('donchi-clean-branch',state.branchId);state.storeId=menuRole()==='superadmin'?null:(state.data?.store?.id||state.storeId);
-    state.usingCache=false;await cacheSet(snapshotKey(),{data:state.data,stores:state.stores,at:Date.now()});
-    localStorage.setItem('donchi-clean-shop',state.storeId||'');
+    state.usingCache=false;
+    // Browser storage can be unavailable (private mode, quota, blocked IndexedDB).
+    // Do not mark a successful server response as a failed API request.
+    try{await cacheSet(snapshotKey(),{data:state.data,stores:state.stores,at:Date.now()})}
+    catch(cacheError){console.warn('Offline snapshot could not be saved:',cacheError)}
+    try{localStorage.setItem('donchi-clean-shop',state.storeId||'')}catch(cacheError){console.warn('Shop preference not saved:',cacheError)}
   }catch(e){
     if(e.status===401){logout('Sessiya muddati tugadi. Qayta kiring.');return}
     if(!looksNetwork(e)){toast(e.message,true);return}
@@ -84,7 +88,11 @@ async function load(){
     if(cached){state.data=cached.data;state.stores=cached.stores;state.usingCache=true}
     else {toast('Internet yo‘q. Bu do‘kon bir marta online ochilgan bo‘lishi kerak.',true)}
   }
-  state.pending=await queueAll();render();
+  try{state.pending=await queueAll()}catch(cacheError){
+    state.pending=[];
+    console.warn('Offline queue unavailable:',cacheError);
+  }
+  render();
 }
 function saveCache(){if(state.data)cacheSet(snapshotKey(),{data:state.data,stores:state.stores,at:Date.now()}).catch(console.error)}
 function logout(msg){session=null;state.data=null;state.pending=[];localStorage.removeItem('donchi-clean-session');localStorage.removeItem('donchi-clean-last-user');localStorage.removeItem('donchi-clean-shop');state.storeId=null;state.branchId=null;render();if(msg)toast(msg,true)}
@@ -100,6 +108,10 @@ async function mutate(path,body,{method='POST',offlineType=null}={}){
   if(!state.online && !offlineType)throw new Error('Bu amal uchun internet kerak');
   try{const r=await request(path,{method,body});await load();return {offline:false,result:r}}
   catch(e){
+    if(e.status===401){
+      logout('Sessiya tugagan. Qayta kiring.');
+      throw new Error('Sessiya tugagan. Qayta kiring.');
+    }
     if(e.status||!offlineType||!looksNetwork(e))throw e;
     state.online=false;
     const op={id:id(),store_id:state.storeId,branch_id:state.branchId,user_id:session.user.id,path,method,body,type:offlineType,status:'pending',error:'',created_at:new Date().toISOString()};
@@ -355,11 +367,41 @@ async function doAction(el){const a=el.dataset.a,mid=el.dataset.id;
   if(a==='discard'){await discardOp(mid);return}
  }catch(e){toast(e.message||'Xatolik',true)}
 }
-document.addEventListener('click',e=>{const el=e.target.closest('[data-a]');if(!el)return;if(el.dataset.a==='modal-overlay'&&e.target!==el)return;doAction(el)});
-document.addEventListener('submit',async e=>{if(e.target.id.startsWith('pa-')){e.preventDefault();await window.platformSettingsSubmit(e.target);return}if(!['login-form','modal-form','settings-form'].includes(e.target.id))return;e.preventDefault();
- const f=e.target;if(f.id==='login-form'){const x=Object.fromEntries(new FormData(f).entries());await login(x.username,x.password)}
- else if(f.id==='modal-form')await onModalSubmit(f);
- else await settingsSave(f);
+// Guard asynchronous actions so repeated clicks cannot send duplicate
+// orders, inventory updates, payments, or account changes.
+const pendingButtonActions=new WeakSet();
+document.addEventListener('click',e=>{
+  const el=e.target.closest('[data-a]');if(!el)return;
+  if(el.dataset.a==='modal-overlay'&&e.target!==el)return;
+  if(pendingButtonActions.has(el))return;
+  pendingButtonActions.add(el);
+  const button=el instanceof HTMLButtonElement?el:null;
+  if(button)button.disabled=true;
+  Promise.resolve().then(()=>doAction(el)).catch(err=>toast(err.message||'Xatolik',true)).finally(()=>{
+    pendingButtonActions.delete(el);
+    if(button)button.disabled=false;
+  });
+});
+const pendingFormSubmissions=new WeakSet();
+document.addEventListener('submit',async e=>{
+  const f=e.target;
+  if(!f.id.startsWith('pa-')&&!['login-form','modal-form','settings-form'].includes(f.id))return;
+  e.preventDefault();
+  if(pendingFormSubmissions.has(f))return;
+  pendingFormSubmissions.add(f);
+  const submit=f.querySelector('[type="submit"]');
+  if(submit)submit.disabled=true;
+  try{
+    if(f.id.startsWith('pa-'))await window.platformSettingsSubmit(f);
+    else if(f.id==='login-form'){
+      const x=Object.fromEntries(new FormData(f).entries());await login(x.username,x.password);
+    }else if(f.id==='modal-form')await onModalSubmit(f);
+    else await settingsSave(f);
+  }catch(err){toast(err.message||'Xatolik',true)}
+  finally{
+    pendingFormSubmissions.delete(f);
+    if(submit)submit.disabled=false;
+  }
 });
 document.addEventListener('change',async e=>{const t=e.target;
  if(t.id==='pa-logo-file'){await window.platformSettingsLogoChange(t.files[0]);return}
