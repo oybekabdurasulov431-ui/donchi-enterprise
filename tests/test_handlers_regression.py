@@ -5,6 +5,7 @@ Runs against a throwaway SQLite database; no production accounts or data.
 import os
 import sys
 import tempfile
+import time
 import unittest
 import uuid
 from pathlib import Path
@@ -123,6 +124,213 @@ class HandlersRegression(unittest.TestCase):
         self.ok(self.admin.get("/platform-admin.js"))
         self.ok(self.admin.get("/app.js"))
         self.ok(self.admin.post("/api/stores",json={"name":"","username":"bad","owner_name":"x","password":"short"}),422)
+
+    def test_05_tenant_isolation_and_financial_integrity(self):
+        # Two independent customers must never see or change one another's data.
+        shops = []
+        owners = []
+        for suffix in ("alpha", "beta"):
+            shop_id = self.ok(self.admin.post("/api/stores", json={
+                "name": f"Isolated {suffix}", "username": f"owner_{suffix}",
+                "owner_name": f"Owner {suffix}", "password": OWNER_PASSWORD, "plan": "Business"
+            }))["store_id"]
+            shop_client = TestClient(server.app)
+            self.ok(shop_client.post("/api/login", json={
+                "username": f"owner_{suffix}", "password": OWNER_PASSWORD
+            }))
+            shops.append(shop_id)
+            owners.append(shop_client)
+
+        alpha, beta = owners
+        self.ok(alpha.get("/api/bootstrap", headers={"X-Store-ID": shops[1]}), 403)
+        self.ok(beta.get("/api/bootstrap", headers={"X-Store-ID": shops[0]}), 403)
+        self.ok(alpha.post("/api/products", json={
+            "name": "Cross-tenant", "sku": "A-FAIL", "unit": "dona",
+            "price": 10, "stock": 1
+        }, headers={"X-Store-ID": shops[1]}), 403)
+        self.ok(alpha.get("/api/platform-admin/settings"), 403)
+
+        pid = self.ok(alpha.post("/api/products", json={
+            "name": "Single item", "sku": "A-ONE", "unit": "dona",
+            "price": 100, "cost": 50, "stock": 1
+        }))["id"]
+        self.ok(alpha.post("/api/shifts/open", json={"opening_cash": 0}))
+        client_id = str(uuid.uuid4())
+        sale = {
+            "client_id": client_id, "lines": [{"product_id": pid, "qty": 2}],
+            "cash_paid": 200, "card_paid": 0
+        }
+        self.ok(alpha.post("/api/sales", json=sale), 409)  # cannot oversell
+        sale["lines"][0]["qty"] = 1
+        sale["cash_paid"] = 100
+        first = self.ok(alpha.post("/api/sales", json=sale))
+        second = self.ok(alpha.post("/api/sales", json=sale))
+        self.assertEqual(first["id"], second["id"])
+        self.assertTrue(second.get("duplicate"))
+        self.ok(alpha.post("/api/sales", json={**sale, "client_id": str(uuid.uuid4())}), 409)
+        self.ok(alpha.post("/api/inventory/adjust", json={
+            "product_id": pid, "delta": -1, "reason": "Tekshiruv"
+        }), 409)
+        alpha_data = self.ok(alpha.get("/api/bootstrap"))["data"]
+        beta_data = self.ok(beta.get("/api/bootstrap"))["data"]
+        self.assertEqual(next(x for x in alpha_data["products"] if x["id"] == pid)["stock"], 0)
+        self.assertFalse(any(x["id"] == pid for x in beta_data.get("products", [])))
+
+        # A forged cross-origin mutation must be rejected when using browser cookies.
+        self.ok(alpha.post("/api/expenses", json={
+            "category": "Test", "amount": 1
+        }, headers={"Origin": "https://attacker.invalid"}), 403)
+        # Simulated public HTTPS origin with an internal HTTP reverse proxy.
+        self.ok(alpha.post("/api/expenses", json={
+            "category": "Same-host HTTPS", "amount": 1
+        }, headers={"Origin": "https://testserver"}))
+        self.ok(alpha.post("/api/expenses", json={
+            "category": "Wrong port", "amount": 1
+        }, headers={"Origin": "https://testserver:443"}), 403)
+        self.ok(alpha.post("/api/expenses", json={
+            "category": "Cross-site fetch", "amount": 1
+        }, headers={"Origin": "https://testserver", "Sec-Fetch-Site": "cross-site"}), 403)
+
+    def test_06_validation_and_permissions(self):
+        self.ok(self.admin.post("/api/stores", json={
+            "name": "Wrong plan", "username": "wrong_plan",
+            "owner_name": "Test", "password": OWNER_PASSWORD, "plan": "FakePlan"
+        }), 422)
+        self.ok(self.admin.post("/api/products", json={
+            "name": "Forbidden", "sku": "FORBIDDEN", "unit": "qop",
+            "price": 1, "stock": 1
+        }), 403)
+        no_session = TestClient(server.app)
+        self.ok(no_session.get("/api/bootstrap"), 401)
+        self.ok(no_session.get("/api/platform-admin/backup"), 401)
+
+    def test_07_2fa_revokes_old_sessions_and_bearer_tokens(self):
+        # The first browser remains authenticated after enabling 2FA, but
+        # other browsers and old bearer tokens must be invalidated.
+        from platform_admin import _otp
+        second = TestClient(server.app)
+        old_login = self.ok(second.post("/api/login", json={
+            "username": "tester", "password": ADMIN_PASSWORD
+        }))
+        old_bearer = old_login["token"]
+        self.ok(second.get("/api/bootstrap"))
+        secret = self.ok(self.admin.post("/api/platform-admin/2fa/start"))["secret"]
+        code = _otp(secret, int(time.time() // 30))
+        self.ok(self.admin.post("/api/platform-admin/2fa/confirm", json={"code": code}))
+        self.ok(self.admin.get("/api/platform-admin/settings"))
+        self.ok(second.get("/api/bootstrap"), 401)
+        unauth = TestClient(server.app)
+        self.ok(unauth.get("/api/bootstrap", headers={
+            "Authorization": "Bearer " + old_bearer
+        }), 401)
+        self.ok(unauth.post("/api/login", json={
+            "username": "tester", "password": ADMIN_PASSWORD
+        }), 401)
+        # A fresh TOTP login should succeed. The code must not be replayed,
+        # so test the current auth session instead of consuming it at login.
+        disable_code = _otp(secret, int(time.time() // 30))
+        self.ok(self.admin.post("/api/platform-admin/2fa/disable", json={
+            "code": disable_code, "current_password": ADMIN_PASSWORD
+        }))
+        self.ok(self.admin.get("/api/bootstrap"))
+        self.ok(unauth.post("/api/login", json={
+            "username": "tester", "password": ADMIN_PASSWORD
+        }))
+
+    def test_08_atomic_modules_and_non_finite_amounts(self):
+        # Batch update must reject invalid values without saving a partial result.
+        shop = self.ok(self.admin.post("/api/stores", json={
+            "name": "Atomic Test Store", "username": "owner_atomic",
+            "owner_name": "Atomic Owner", "password": OWNER_PASSWORD, "plan": "Business"
+        }))["store_id"]
+        modules = {
+            "debts": False, "returns": True, "analytics": True, "delivery": False,
+            "finance": True, "crm": False, "branches": True, "telegram": False,
+            "insights": True
+        }
+        good = self.ok(self.admin.put(f"/api/stores/{shop}/modules", json={"modules": modules}))
+        self.assertEqual(good["modules"], modules)
+        self.ok(self.admin.put(f"/api/stores/{shop}/modules", json={
+            "modules": {**modules, "debts": True, "crm": "invalid"}
+        }), 422)
+        self.ok(self.admin.put(f"/api/stores/{shop}/modules", json={
+            "modules": {"debts": True}
+        }), 422)
+        with server.connection() as db:
+            flags = server.features_for(db, shop)
+        self.assertEqual(flags, modules)
+
+        owner = TestClient(server.app)
+        self.ok(owner.post("/api/login", json={
+            "username": "owner_atomic", "password": OWNER_PASSWORD
+        }))
+        self.ok(owner.post("/api/products", json={
+            "name": "Valid Product", "sku": "ATOM-1", "unit": "dona",
+            "price": 10, "stock": 0
+        }))
+        for invalid in ("Infinity", "-Infinity", "NaN"):
+            # Send malformed JSON numeric tokens directly: httpx rightly refuses
+            # non-finite floats when encoding its json= argument.
+            response = owner.post("/api/expenses",
+                content='{"category":"Invalid","amount":'+invalid+'}',
+                headers={"Content-Type":"application/json"})
+            self.assertEqual(response.status_code, 422, response.text[:800])
+            response = owner.post("/api/products",
+                content='{"name":"Bad Product","sku":"BAD-NUM","unit":"dona","price":'+invalid+',"stock":1}',
+                headers={"Content-Type":"application/json"})
+            self.assertEqual(response.status_code, 422, response.text[:800])
+
+    def test_09_seller_warehouse_manager_permission_boundaries(self):
+        sid = self.ok(self.admin.post("/api/stores", json={
+            "name": "Role boundaries", "username": "owner_roles",
+            "owner_name": "Owner Roles", "password": OWNER_PASSWORD, "plan": "Business"
+        }))["store_id"]
+        owner = TestClient(server.app)
+        self.ok(owner.post("/api/login", json={
+            "username": "owner_roles", "password": OWNER_PASSWORD
+        }))
+        users = {}
+        for user_role in ("seller", "warehouse", "manager"):
+            username = "test_" + user_role
+            self.ok(owner.post("/api/users", json={
+                "username": username, "full_name": "Role " + user_role,
+                "role": user_role, "password": OWNER_PASSWORD
+            }))
+            session = TestClient(server.app)
+            self.ok(session.post("/api/login", json={
+                "username": username, "password": OWNER_PASSWORD
+            }))
+            users[user_role] = session
+        product = self.ok(owner.post("/api/products", json={
+            "name": "Roles product", "sku": "ROLES", "unit": "dona",
+            "price": 100, "stock": 5
+        }))["id"]
+        seller, warehouse, manager = (users[r] for r in ("seller", "warehouse", "manager"))
+        self.ok(seller.get("/api/bootstrap"))
+        self.ok(warehouse.get("/api/bootstrap"))
+        self.ok(manager.get("/api/bootstrap"))
+        self.ok(seller.post("/api/products",json={
+            "name": "Seller forbidden", "sku":"SELLBAD", "unit":"dona",
+            "price": 2, "stock": 1
+        }),403)
+        self.ok(seller.post("/api/inventory/adjust",json={
+            "product_id":product,"delta":1,"reason":"Kirim"
+        }),403)
+        self.ok(warehouse.post("/api/shifts/open",json={"opening_cash":0}),403)
+        self.ok(warehouse.post("/api/sales",json={
+            "client_id":str(uuid.uuid4()),"lines":[{"product_id":product,"qty":1}],
+            "cash_paid":100
+        }),403)
+        self.ok(warehouse.post("/api/inventory/adjust",json={
+            "product_id":product,"delta":1,"reason":"Kirim"
+        }))
+        self.ok(manager.post("/api/users",json={
+            "username":"manager_forbidden","full_name":"Forbidden",
+            "password":OWNER_PASSWORD,"role":"seller"
+        }),403)
+        self.ok(manager.get("/api/platform-admin/settings"),403)
+        self.ok(seller.get("/api/platform-admin/backup"),403)
+        self.ok(warehouse.get("/api/platform-admin/backup"),403)
 
 
 if __name__=="__main__":

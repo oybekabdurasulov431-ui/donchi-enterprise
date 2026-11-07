@@ -295,8 +295,9 @@ async function onModalSubmit(form){const x=Object.fromEntries(new FormData(form)
     case 'new-user':await mutate('/users',x);toast('Xodim qo‘shildi');break;
     case 'new-store':await mutate('/stores',x);toast('Yangi do‘kon yaratildi');break;
     case 'store-modules':{
-       for(const module of ['debts','returns','analytics','delivery','finance','crm','branches','telegram','insights'])await request('/stores/'+state.modalData+'/modules',{method:'POST',body:{module,enabled:!!x[module]}});
-       await load();toast('Modul ruxsatlari yangilandi');break}
+       const modules=Object.fromEntries(['debts','returns','analytics','delivery','finance','crm','branches','telegram','insights'].map(module=>[module,!!x[module]]));
+       await request('/stores/'+state.modalData+'/modules',{method:'PUT',body:{modules}});
+       await load();toast('Barcha modul ruxsatlari birgalikda saqlandi');break}
 
     case 'open-shift':await mutate('/shifts/open',{opening_cash:num(x.opening_cash)});toast('Kassa smenasi ochildi');break;
     case 'close-shift':{const r=await mutate('/shifts/close',{counted_cash:num(x.counted_cash),note:x.note||''});toast('Smena yopildi. Farq: '+som(r.result.variance));break}

@@ -6,6 +6,7 @@ import base64
 import hashlib
 import hmac
 import json
+import math
 import os
 import re
 import secrets
@@ -97,6 +98,29 @@ def parse_token(token):
         return payload
     except (ValueError, KeyError, TypeError): http(401,'Sessiya noto‘g‘ri')
 
+def origin_matches_request(request: Request, origin: str) -> bool:
+    """Compare the browser Origin with the public Host, including proxy TLS.
+
+    Render terminates HTTPS ahead of Uvicorn, which can see an internal HTTP
+    scheme. Only a matching public host and port is accepted; unrelated
+    origins, malformed values and HTTP origins for HTTPS are rejected.
+    """
+    from urllib.parse import urlsplit
+    try:
+        parsed = urlsplit(origin)
+        if parsed.scheme not in ('https', 'http') or not parsed.netloc:
+            return False
+        if parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment:
+            return False
+        host = request.headers.get('host', '').lower()
+        if parsed.netloc.lower() != host:
+            return False
+        scheme = request.url.scheme
+        return parsed.scheme == scheme or (scheme == 'http' and parsed.scheme == 'https')
+    except (ValueError, TypeError):
+        return False
+
+
 async def get_user(request: Request):
     header = request.headers.get('Authorization','')
     if header.startswith('Bearer '):
@@ -113,7 +137,7 @@ async def get_user(request: Request):
             site = request.headers.get('sec-fetch-site','')
             origin = request.headers.get('origin','')
             if site == 'cross-site': http(403,'Begona saytdan so‘rov bloklandi')
-            if origin and origin.rstrip('/') != str(request.base_url).rstrip('/'):
+            if origin and not origin_matches_request(request, origin):
                 http(403,'So‘rov manbasi mos emas')
     with connection() as db:
         user = onerow(db,'SELECT id,username,full_name,role,store_id,active,created_at,session_version FROM users WHERE id=?',(payload['u'],))
@@ -198,6 +222,7 @@ class ReturnLine(BaseModel): sale_item_id:str; qty:float
 class ReturnIn(BaseModel): client_id:str; items:list[ReturnLine]; refund_method:str='cash'
 class StorePlan(BaseModel): plan:str
 class StoreModule(BaseModel): module:str; enabled:bool
+class StoreModulesBatch(BaseModel): modules:dict[str,bool]
 
 
 def clean_name(s,n=120):
@@ -206,7 +231,7 @@ def clean_name(s,n=120):
     return x
 
 def money(n):
-    if not isinstance(n,(int,float)) or n != n or n < 0 or n > 1e12: http(422,'Summa noto‘g‘ri')
+    if isinstance(n,bool) or not isinstance(n,(int,float)) or not math.isfinite(n) or n < 0 or n > 1e12: http(422,'Summa noto‘g‘ri')
     return round(float(n),2)
 
 MODULES=('debts','returns','analytics','delivery','finance','crm','branches','telegram','insights')
@@ -314,7 +339,7 @@ def upgrade_legacy_session(request:Request,response:Response,user=Depends(get_us
 @app.post('/api/logout')
 def server_logout(request:Request,response:Response):
     origin=request.headers.get('origin','')
-    if request.headers.get('sec-fetch-site','')=='cross-site' or (origin and origin.rstrip('/')!=str(request.base_url).rstrip('/')):
+    if request.headers.get('sec-fetch-site','')=='cross-site' or (origin and not origin_matches_request(request, origin)):
         http(403,'Begona saytdan chiqish so‘rovi bloklandi')
     raw=request.cookies.get(COOKIE_NAME)
     if raw:
@@ -448,6 +473,29 @@ def set_store_module(store_id:str,payload:StoreModule,user=Depends(get_user)):
         db.execute('INSERT INTO store_modules(store_id,module,enabled) VALUES(?,?,?) ON CONFLICT(store_id,module) DO UPDATE SET enabled=excluded.enabled',(store_id,payload.module,int(payload.enabled)))
         audit(db,store_id,user,'MODULE_TOGGLED',{'module':payload.module,'enabled':payload.enabled})
     return {'ok':True}
+
+@app.put('/api/stores/{store_id}/modules')
+def set_store_modules_batch(store_id:str,payload:StoreModulesBatch,user=Depends(get_user)):
+    """Apply all module permissions in one database transaction."""
+    role(user,['superadmin'])
+    # Reject invalid or partial payloads before any database writes.
+    if set(payload.modules) != set(MODULES):
+        http(422,'Barcha modullar to‘liq yuborilishi kerak')
+    if any(type(enabled) is not bool for enabled in payload.modules.values()):
+        http(422,'Modul qiymatlari true yoki false bo‘lishi kerak')
+    with connection(write=True) as db:
+        if not onerow(db,'SELECT id FROM stores WHERE id=?',(store_id,)):
+            http(404,'Do‘kon topilmadi')
+        for module in MODULES:
+            enabled=payload.modules[module]
+            db.execute(
+                'INSERT INTO store_modules(store_id,module,enabled) VALUES(?,?,?) '
+                'ON CONFLICT(store_id,module) DO UPDATE SET enabled=excluded.enabled',
+                (store_id,module,int(enabled)),
+            )
+        audit(db,store_id,user,'MODULES_BATCH_UPDATED',{'modules':payload.modules})
+    return {'ok':True,'modules':payload.modules}
+
 
 @app.post('/api/users')
 def add_user(payload:UserIn,request:Request,user=Depends(get_user)):
@@ -803,7 +851,19 @@ def update_inquiry(inquiry_id:str,payload:InquiryStatus,user=Depends(get_user)):
 extra_summary,smart_insights,branch_for,stock_at,adjust_branch,consume_lots = __import__('v5_features').install(app)
 
 @app.get('/api/health')
-def health():return {'ok':True,'service':'DONCHI 1.0','time':now()}
+def health():
+    """Readiness: verify SQLite is actually accessible before reporting success."""
+    try:
+        with connection() as db:
+            db.execute('SELECT 1 FROM users LIMIT 1').fetchone()
+    except sqlite3.Error:
+        # Never expose DB paths, statements or credentials in public responses.
+        return JSONResponse(
+            status_code=503,
+            content={'ok': False, 'service': 'DONCHI 1.0', 'status': 'database_unavailable'},
+            headers={'Cache-Control': 'no-store', 'Retry-After': '10'},
+        )
+    return {'ok': True, 'service': 'DONCHI 1.0', 'status': 'ready', 'time': now()}
 
 # The web UI is intentionally served from the same origin as the API.
 from platform_admin import totp_required, verify_login_totp
