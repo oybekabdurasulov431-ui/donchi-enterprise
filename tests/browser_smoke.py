@@ -29,6 +29,14 @@ assert tc.post("/api/login",json={"username":"admin_smoke","password":ADMIN_PASS
 res=tc.post("/api/stores",json={"name":"Browser Test Store","username":"owner_smoke",
     "owner_name":"Owner Test","password":OWNER_PASSWORD,"plan":"Business"})
 assert res.status_code==200, res.text
+owner_client=TestClient(server.app)
+assert owner_client.post("/api/login",json={"username":"owner_smoke","password":OWNER_PASSWORD}).status_code==200
+for name,role in [("seller_smoke","seller"),("warehouse_smoke","warehouse"),("manager_smoke","manager")]:
+    created=owner_client.post("/api/users",json={
+        "username":name,"full_name":role.title()+" Test","role":role,
+        "password":OWNER_PASSWORD
+    })
+    assert created.status_code==200, created.text
 
 sock=socket.socket();sock.bind(("127.0.0.1",0));port=sock.getsockname()[1];sock.close()
 url=f"http://127.0.0.1:{port}"
@@ -81,8 +89,16 @@ try:
             ["dashboard","pos","shifts","returns","products","inventory",
              "lots","branches","deliveries","debts","customers","crm","finance",
              "insights","telegram","updates","security","analytics","team","settings","sync"])
+        check_role("/app/","seller_smoke",OWNER_PASSWORD,
+            ["pos","shifts","deliveries","debts","customers","updates","sync"])
+        check_role("/app/","warehouse_smoke",OWNER_PASSWORD,
+            ["products","inventory","lots","branches","updates","sync"])
+        check_role("/app/","manager_smoke",OWNER_PASSWORD,
+            ["dashboard","pos","shifts","returns","products","inventory","lots",
+             "branches","deliveries","debts","customers","crm","finance",
+             "insights","updates","analytics","sync"])
         browser.close()
-        print("PASS: Chromium Super Admin and Owner UI pages opened without JS errors.")
+        print("PASS: Chromium all five roles (Super Admin, Owner, Manager, Seller, Warehouse) opened permitted panels without JavaScript errors.")
 finally:
     process.terminate()
     try:process.wait(timeout=5)
