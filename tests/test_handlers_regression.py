@@ -259,14 +259,15 @@ class HandlersRegression(unittest.TestCase):
             "price": 10, "stock": 0
         }))
         for invalid in ("Infinity", "-Infinity", "NaN"):
-            response = owner.post("/api/expenses", json={
-                "category": "Invalid", "amount": float(invalid)
-            })
+            # Send malformed JSON numeric tokens directly: httpx rightly refuses
+            # non-finite floats when encoding its json= argument.
+            response = owner.post("/api/expenses",
+                content='{"category":"Invalid","amount":'+invalid+'}',
+                headers={"Content-Type":"application/json"})
             self.assertEqual(response.status_code, 422, response.text[:800])
-            response = owner.post("/api/products", json={
-                "name": "Bad Product", "sku": "BAD-" + invalid,
-                "unit": "dona", "price": float(invalid), "stock": 1
-            })
+            response = owner.post("/api/products",
+                content='{"name":"Bad Product","sku":"BAD-NUM","unit":"dona","price":'+invalid+',"stock":1}',
+                headers={"Content-Type":"application/json"})
             self.assertEqual(response.status_code, 422, response.text[:800])
 
 
