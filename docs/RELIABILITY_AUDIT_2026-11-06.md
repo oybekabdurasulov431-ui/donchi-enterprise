@@ -45,3 +45,16 @@ Last verified run: https://github.com/oybekabdurasulov431-ui/donchi-enterprise/a
 - [ ] Release to Render after data safety checks
 
 **Conclusion:** Core demo handlers pass automated checks. DONCHI is not certified error-free or production-ready until the remaining blockers are addressed.
+
+## Additional verification — 2026-11-07
+
+Tested in GitHub Actions: https://github.com/oybekabdurasulov431-ui/donchi-enterprise/actions/runs/42381631336 — **success**.
+
+- Super Admin module permissions now save via one atomic `PUT /api/stores/{store_id}/modules` transaction. Missing/invalid flags are rejected before any change. The UI was switched from nine sequential requests to this endpoint.
+- Validation explicitly rejects non-finite monetary amounts (`Infinity`, `-Infinity`, `NaN`) and boolean monetary values.
+- Headless Chromium navigates each permitted page for all five roles: Super Admin, Owner, Manager, Seller, Warehouse.
+- Negative API permission tests verify restricted seller/warehouse/manager operations return 403.
+- Browser cookie Origin validation accounts for HTTPS termination in a reverse proxy while refusing foreign hosts and cross-site requests.
+- The regression suite checks persistence of module flags after failed updates, double-submitted sales, insufficient stock and tenant isolation.
+
+**Still not certified end-to-end:** This suite verifies pages open without uncaught JS exceptions and a representative set of handlers, not every button and failure path. Missing durable database, backup restores, load tests and offline reconciliation remain blocking work. Changes are on `improve/donchi-reliability-20261106`; this report does not claim they were deployed to Render.
