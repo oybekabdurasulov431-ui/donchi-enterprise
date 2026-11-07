@@ -98,6 +98,29 @@ def parse_token(token):
         return payload
     except (ValueError, KeyError, TypeError): http(401,'Sessiya noto‘g‘ri')
 
+def origin_matches_request(request: Request, origin: str) -> bool:
+    """Compare the browser Origin with the public Host, including proxy TLS.
+
+    Render terminates HTTPS ahead of Uvicorn, which can see an internal HTTP
+    scheme. Only a matching public host and port is accepted; unrelated
+    origins, malformed values and HTTP origins for HTTPS are rejected.
+    """
+    from urllib.parse import urlsplit
+    try:
+        parsed = urlsplit(origin)
+        if parsed.scheme not in ('https', 'http') or not parsed.netloc:
+            return False
+        if parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment:
+            return False
+        host = request.headers.get('host', '').lower()
+        if parsed.netloc.lower() != host:
+            return False
+        scheme = request.url.scheme
+        return parsed.scheme == scheme or (scheme == 'http' and parsed.scheme == 'https')
+    except (ValueError, TypeError):
+        return False
+
+
 async def get_user(request: Request):
     header = request.headers.get('Authorization','')
     if header.startswith('Bearer '):
@@ -114,7 +137,7 @@ async def get_user(request: Request):
             site = request.headers.get('sec-fetch-site','')
             origin = request.headers.get('origin','')
             if site == 'cross-site': http(403,'Begona saytdan so‘rov bloklandi')
-            if origin and origin.rstrip('/') != str(request.base_url).rstrip('/'):
+            if origin and not origin_matches_request(request, origin):
                 http(403,'So‘rov manbasi mos emas')
     with connection() as db:
         user = onerow(db,'SELECT id,username,full_name,role,store_id,active,created_at,session_version FROM users WHERE id=?',(payload['u'],))
@@ -316,7 +339,7 @@ def upgrade_legacy_session(request:Request,response:Response,user=Depends(get_us
 @app.post('/api/logout')
 def server_logout(request:Request,response:Response):
     origin=request.headers.get('origin','')
-    if request.headers.get('sec-fetch-site','')=='cross-site' or (origin and origin.rstrip('/')!=str(request.base_url).rstrip('/')):
+    if request.headers.get('sec-fetch-site','')=='cross-site' or (origin and not origin_matches_request(request, origin)):
         http(403,'Begona saytdan chiqish so‘rovi bloklandi')
     raw=request.cookies.get(COOKIE_NAME)
     if raw:
