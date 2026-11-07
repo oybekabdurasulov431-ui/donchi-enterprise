@@ -227,6 +227,48 @@ class HandlersRegression(unittest.TestCase):
             "username": "tester", "password": ADMIN_PASSWORD
         }))
 
+    def test_08_atomic_modules_and_non_finite_amounts(self):
+        # Batch update must reject invalid values without saving a partial result.
+        shop = self.ok(self.admin.post("/api/stores", json={
+            "name": "Atomic Test Store", "username": "owner_atomic",
+            "owner_name": "Atomic Owner", "password": OWNER_PASSWORD, "plan": "Business"
+        }))["store_id"]
+        modules = {
+            "debts": False, "returns": True, "analytics": True, "delivery": False,
+            "finance": True, "crm": False, "branches": True, "telegram": False,
+            "insights": True
+        }
+        good = self.ok(self.admin.put(f"/api/stores/{shop}/modules", json={"modules": modules}))
+        self.assertEqual(good["modules"], modules)
+        self.ok(self.admin.put(f"/api/stores/{shop}/modules", json={
+            "modules": {**modules, "debts": True, "crm": "invalid"}
+        }), 422)
+        self.ok(self.admin.put(f"/api/stores/{shop}/modules", json={
+            "modules": {"debts": True}
+        }), 422)
+        with server.connection() as db:
+            flags = server.features_for(db, shop)
+        self.assertEqual(flags, modules)
+
+        owner = TestClient(server.app)
+        self.ok(owner.post("/api/login", json={
+            "username": "owner_atomic", "password": OWNER_PASSWORD
+        }))
+        self.ok(owner.post("/api/products", json={
+            "name": "Valid Product", "sku": "ATOM-1", "unit": "dona",
+            "price": 10, "stock": 0
+        }))
+        for invalid in ("Infinity", "-Infinity", "NaN"):
+            response = owner.post("/api/expenses", json={
+                "category": "Invalid", "amount": float(invalid)
+            })
+            self.assertEqual(response.status_code, 422, response.text[:800])
+            response = owner.post("/api/products", json={
+                "name": "Bad Product", "sku": "BAD-" + invalid,
+                "unit": "dona", "price": float(invalid), "stock": 1
+            })
+            self.assertEqual(response.status_code, 422, response.text[:800])
+
 
 if __name__=="__main__":
     unittest.main(verbosity=2)
