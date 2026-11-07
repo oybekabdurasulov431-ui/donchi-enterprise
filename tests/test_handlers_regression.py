@@ -180,6 +180,16 @@ class HandlersRegression(unittest.TestCase):
         self.ok(alpha.post("/api/expenses", json={
             "category": "Test", "amount": 1
         }, headers={"Origin": "https://attacker.invalid"}), 403)
+        # Simulated public HTTPS origin with an internal HTTP reverse proxy.
+        self.ok(alpha.post("/api/expenses", json={
+            "category": "Same-host HTTPS", "amount": 1
+        }, headers={"Origin": "https://testserver"}))
+        self.ok(alpha.post("/api/expenses", json={
+            "category": "Wrong port", "amount": 1
+        }, headers={"Origin": "https://testserver:443"}), 403)
+        self.ok(alpha.post("/api/expenses", json={
+            "category": "Cross-site fetch", "amount": 1
+        }, headers={"Origin": "https://testserver", "Sec-Fetch-Site": "cross-site"}), 403)
 
     def test_06_validation_and_permissions(self):
         self.ok(self.admin.post("/api/stores", json={
