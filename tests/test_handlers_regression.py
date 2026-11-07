@@ -270,6 +270,58 @@ class HandlersRegression(unittest.TestCase):
                 headers={"Content-Type":"application/json"})
             self.assertEqual(response.status_code, 422, response.text[:800])
 
+    def test_09_seller_warehouse_manager_permission_boundaries(self):
+        sid = self.ok(self.admin.post("/api/stores", json={
+            "name": "Role boundaries", "username": "owner_roles",
+            "owner_name": "Owner Roles", "password": OWNER_PASSWORD, "plan": "Business"
+        }))["store_id"]
+        owner = TestClient(server.app)
+        self.ok(owner.post("/api/login", json={
+            "username": "owner_roles", "password": OWNER_PASSWORD
+        }))
+        users = {}
+        for user_role in ("seller", "warehouse", "manager"):
+            username = "test_" + user_role
+            self.ok(owner.post("/api/users", json={
+                "username": username, "full_name": "Role " + user_role,
+                "role": user_role, "password": OWNER_PASSWORD
+            }))
+            session = TestClient(server.app)
+            self.ok(session.post("/api/login", json={
+                "username": username, "password": OWNER_PASSWORD
+            }))
+            users[user_role] = session
+        product = self.ok(owner.post("/api/products", json={
+            "name": "Roles product", "sku": "ROLES", "unit": "dona",
+            "price": 100, "stock": 5
+        }))["id"]
+        seller, warehouse, manager = (users[r] for r in ("seller", "warehouse", "manager"))
+        self.ok(seller.get("/api/bootstrap"))
+        self.ok(warehouse.get("/api/bootstrap"))
+        self.ok(manager.get("/api/bootstrap"))
+        self.ok(seller.post("/api/products",json={
+            "name": "Seller forbidden", "sku":"SELLBAD", "unit":"dona",
+            "price": 2, "stock": 1
+        }),403)
+        self.ok(seller.post("/api/inventory/adjust",json={
+            "product_id":product,"delta":1,"reason":"Kirim"
+        }),403)
+        self.ok(warehouse.post("/api/shifts/open",json={"opening_cash":0}),403)
+        self.ok(warehouse.post("/api/sales",json={
+            "client_id":str(uuid.uuid4()),"lines":[{"product_id":product,"qty":1}],
+            "cash_paid":100
+        }),403)
+        self.ok(warehouse.post("/api/inventory/adjust",json={
+            "product_id":product,"delta":1,"reason":"Kirim"
+        }))
+        self.ok(manager.post("/api/users",json={
+            "username":"manager_forbidden","full_name":"Forbidden",
+            "password":OWNER_PASSWORD,"role":"seller"
+        }),403)
+        self.ok(manager.get("/api/platform-admin/settings"),403)
+        self.ok(seller.get("/api/platform-admin/backup"),403)
+        self.ok(warehouse.get("/api/platform-admin/backup"),403)
+
 
 if __name__=="__main__":
     unittest.main(verbosity=2)
