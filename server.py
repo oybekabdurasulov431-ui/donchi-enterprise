@@ -6,6 +6,7 @@ import base64
 import hashlib
 import hmac
 import json
+import math
 import os
 import re
 import secrets
@@ -198,6 +199,7 @@ class ReturnLine(BaseModel): sale_item_id:str; qty:float
 class ReturnIn(BaseModel): client_id:str; items:list[ReturnLine]; refund_method:str='cash'
 class StorePlan(BaseModel): plan:str
 class StoreModule(BaseModel): module:str; enabled:bool
+class StoreModulesBatch(BaseModel): modules:dict[str,bool]
 
 
 def clean_name(s,n=120):
@@ -206,7 +208,7 @@ def clean_name(s,n=120):
     return x
 
 def money(n):
-    if not isinstance(n,(int,float)) or n != n or n < 0 or n > 1e12: http(422,'Summa noto‘g‘ri')
+    if isinstance(n,bool) or not isinstance(n,(int,float)) or not math.isfinite(n) or n < 0 or n > 1e12: http(422,'Summa noto‘g‘ri')
     return round(float(n),2)
 
 MODULES=('debts','returns','analytics','delivery','finance','crm','branches','telegram','insights')
@@ -448,6 +450,29 @@ def set_store_module(store_id:str,payload:StoreModule,user=Depends(get_user)):
         db.execute('INSERT INTO store_modules(store_id,module,enabled) VALUES(?,?,?) ON CONFLICT(store_id,module) DO UPDATE SET enabled=excluded.enabled',(store_id,payload.module,int(payload.enabled)))
         audit(db,store_id,user,'MODULE_TOGGLED',{'module':payload.module,'enabled':payload.enabled})
     return {'ok':True}
+
+@app.put('/api/stores/{store_id}/modules')
+def set_store_modules_batch(store_id:str,payload:StoreModulesBatch,user=Depends(get_user)):
+    """Apply all module permissions in one database transaction."""
+    role(user,['superadmin'])
+    # Reject invalid or partial payloads before any database writes.
+    if set(payload.modules) != set(MODULES):
+        http(422,'Barcha modullar to‘liq yuborilishi kerak')
+    if any(type(enabled) is not bool for enabled in payload.modules.values()):
+        http(422,'Modul qiymatlari true yoki false bo‘lishi kerak')
+    with connection(write=True) as db:
+        if not onerow(db,'SELECT id FROM stores WHERE id=?',(store_id,)):
+            http(404,'Do‘kon topilmadi')
+        for module in MODULES:
+            enabled=payload.modules[module]
+            db.execute(
+                'INSERT INTO store_modules(store_id,module,enabled) VALUES(?,?,?) '
+                'ON CONFLICT(store_id,module) DO UPDATE SET enabled=excluded.enabled',
+                (store_id,module,int(enabled)),
+            )
+        audit(db,store_id,user,'MODULES_BATCH_UPDATED',{'modules':payload.modules})
+    return {'ok':True,'modules':payload.modules}
+
 
 @app.post('/api/users')
 def add_user(payload:UserIn,request:Request,user=Depends(get_user)):
