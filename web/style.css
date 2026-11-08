@@ -115,3 +115,8 @@ html[data-theme=dark]{--bg:#091b1a;--surface:#102824;--surface2:#17332d;--surfac
 @media (hover:hover){.panel{transition:border-color .2s ease,box-shadow .2s ease}.panel:hover{border-color:var(--stroke);box-shadow:0 12px 35px #062d2410}}
 @media(max-width:700px){.topbar{gap:6px}.rightbar{gap:4px}.topbar .storeselect{max-width:93px}.content{padding-inline:12px}}
 @media(max-width:380px){.rightbar .online{padding:7px 6px;font-size:9px}.rightbar .icon-btn{height:35px;width:35px}.topbar{gap:3px}.page-head h1{font-size:22px}}
+
+/* DONCHI Enterprise mobile refinements */
+@media(max-width:900px){.panel,.stat{min-width:0}.table-wrap,.table-scroll,.pa-table-scroll{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}.rightbar{gap:6px}}
+@media(max-width:600px){.content{padding:14px 10px}.stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.stats-grid .stat{padding:12px}.stat .svalue{font-size:17px;overflow-wrap:anywhere}.topbar{min-width:0}.page-head .actions{display:flex;flex-wrap:wrap;width:100%}.page-head .actions .btn{flex:1 1 auto}.outbox-item{flex-wrap:wrap}}
+@media(max-width:390px){.stats-grid{grid-template-columns:1fr}}

@@ -6,6 +6,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import math
 import os
 import re
@@ -293,7 +294,17 @@ def shift_money(db,shift):
 
 @app.middleware('http')
 async def sec_headers(request:Request,call_next):
-    resp = await call_next(request)
+    request_id = secrets.token_hex(8)
+    try:
+        resp = await call_next(request)
+    except Exception:
+        # Avoid putting customer details, cookies or passwords in log output.
+        logging.getLogger('donchi.api').exception(
+            'Unhandled API error request_id=%s method=%s', request_id, request.method)
+        resp = JSONResponse(status_code=500,
+            content={'detail':'Serverda kutilmagan xatolik. So‘rov kodini administratorga yuboring.',
+                     'request_id':request_id})
+    resp.headers['X-Request-ID']=request_id
     resp.headers['X-Content-Type-Options']='nosniff'
     resp.headers['X-Frame-Options']='DENY'
     resp.headers['Referrer-Policy']='no-referrer'
