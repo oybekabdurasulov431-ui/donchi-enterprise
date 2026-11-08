@@ -69,6 +69,21 @@ try:
                 page.wait_for_timeout(90)
                 if errors:
                     raise AssertionError(f"{username}/{section}: browser errors: {errors}")
+            if username=="owner_smoke":
+                # Reproduce the real production failure: login session persists,
+                # but the browser points at a branch deleted after Render restart.
+                page.evaluate("""() => localStorage.setItem(
+                    'donchi-clean-branch','deleted-demo-branch')""")
+                bootstrap_status=[]
+                page.on("response",lambda r: bootstrap_status.append(r.status)
+                    if "/api/bootstrap" in r.url else None)
+                page.reload(wait_until="domcontentloaded")
+                page.locator('nav.sidebar-nav [data-v="dashboard"]').wait_for(timeout=12000)
+                page.wait_for_timeout(700)
+                assert 200 in bootstrap_status, bootstrap_status
+                assert page.evaluate("localStorage.getItem('donchi-clean-branch')") != 'deleted-demo-branch'
+                assert not errors, errors
+                print("PASS: stale stored branch recovered on session reload",flush=True)
             if username=="admin_smoke":
                 api_status=[]
                 page.on("response",lambda response: api_status.append([response.status,response.url]) if "/api/" in response.url else None)
