@@ -77,7 +77,12 @@ async function request(path,{method='GET',body,storeId=state.storeId,branchId=st
   try{
     const resp=await fetch('/api'+path,{method,headers:{'Content-Type':'application/json',...(session?.token?{'Authorization':'Bearer '+session.token}:{}),...(storeId?{'X-Store-ID':storeId}:{}),...(branchId?{'X-Branch-ID':branchId}:{})},body:body===undefined?undefined:JSON.stringify(body),credentials:'same-origin',signal:controller.signal});
     let json;try{json=await resp.json()}catch{json={detail:`Server xatosi: HTTP ${resp.status}`}}
-    if(!resp.ok){const error=new Error(typeof json.detail==='string'?json.detail:'Ma’lumotlar noto‘g‘ri');error.status=resp.status;throw error}
+    if(!resp.ok){
+      const message=typeof json.detail==='string'?json.detail:'Ma’lumotlar noto‘g‘ri';
+      const trace=resp.status>=500?resp.headers.get('X-Request-ID'):null;
+      const error=new Error(message+(trace?' (so‘rov: '+trace+')':''));
+      error.status=resp.status;throw error
+    }
     state.online=true;return json;
   }finally{clearTimeout(timer)}
 }
