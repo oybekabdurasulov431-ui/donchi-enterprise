@@ -49,6 +49,10 @@ class HandlersRegression(unittest.TestCase):
         self.assertEqual(r["profile"]["username"], "tester")
         self.assertGreaterEqual(len(r["plans"]), 4)
         self.assertIn("monitor", r)
+        self.assertIn("storage_warning", r["monitor"])
+        self.assertIn("integrity_check", r["monitor"])
+        self.assertEqual(r["monitor"]["integrity_check"], "ok")
+        self.assertFalse(r["monitor"]["automatic_offsite_backup"])
         unauth = TestClient(server.app)
         self.ok(unauth.get("/api/platform-admin/settings"), 401)
         self.ok(unauth.post("/api/products",json={}), 401)
@@ -114,6 +118,14 @@ class HandlersRegression(unittest.TestCase):
         r=self.admin.get("/api/platform-admin/backup")
         self.assertEqual(r.status_code,200,r.text[:1000])
         self.assertGreater(len(r.content),1000)
+        import sqlite3
+        import tempfile
+        from pathlib import Path
+        with tempfile.NamedTemporaryFile(suffix=".sqlite3") as dst:
+            Path(dst.name).write_bytes(r.content)
+            with sqlite3.connect(dst.name) as restored:
+                self.assertEqual(restored.execute('PRAGMA integrity_check').fetchone()[0],'ok')
+                self.assertGreaterEqual(restored.execute('SELECT COUNT(*) FROM users').fetchone()[0],1)
         self.ok(self.admin.post("/api/platform-admin/sessions/revoke-others"))
         self.ok(self.admin.get("/api/bootstrap"))
 
