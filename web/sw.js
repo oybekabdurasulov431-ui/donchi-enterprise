@@ -1,5 +1,5 @@
-const CACHE='donchi-enterprise-v1.2.1';
-const SHELL=['/','/index.html','/app/','/platform/','/site/','/site/style.css','/style.css?v=1.1.0','/app.js?v=1.2.0','/v5.js?v=1.1.0','/platform-admin.js?v=1.2.0','/platform-admin.css?v=1.2.0','/icon.svg','/manifest.webmanifest'];
+const CACHE='donchi-enterprise-v1.2.3';
+const SHELL=['/','/index.html','/app/','/platform/','/site/','/site/style.css','/style.css?v=1.1.0','/app.js?v=1.2.3','/v5.js?v=1.1.0','/platform-admin.js?v=1.2.0','/platform-admin.css?v=1.2.0','/icon.svg','/manifest.webmanifest'];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting()));
 });
