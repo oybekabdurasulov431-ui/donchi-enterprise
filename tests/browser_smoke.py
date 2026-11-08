@@ -84,6 +84,24 @@ try:
                 assert page.evaluate("localStorage.getItem('donchi-clean-branch')") != 'deleted-demo-branch'
                 assert not errors, errors
                 print("PASS: stale stored branch recovered on session reload",flush=True)
+            if username=="owner_smoke":
+                # A real write through the browser catches broken buttons,
+                # forms and API binding errors that menu-only smoke tests miss.
+                page.locator('nav.sidebar-nav [data-v="products"]').click()
+                page.locator('[data-a="new-product"]').first.click()
+                page.locator('#modal-form input[name="name"]').fill("Browser Product")
+                page.locator('#modal-form input[name="sku"]').fill("BROWSER-001")
+                page.locator('#modal-form input[name="price"]').fill("12000")
+                page.locator('#modal-form input[name="cost"]').fill("8000")
+                page.locator('#modal-form input[name="stock"]').fill("4")
+                with page.expect_response(lambda r:
+                        r.url.endswith("/api/products") and r.request.method == "POST",
+                        timeout=15000) as result:
+                    page.locator('#modal-form button[type="submit"]').click()
+                assert result.value.status == 200, "Product form: " + result.value.text()
+                page.get_by_text("Browser Product").first.wait_for(timeout=8000)
+                if errors: raise AssertionError("Owner browser form errors: "+str(errors))
+                print("PASS: browser product form saved",flush=True)
             if username=="admin_smoke":
                 api_status=[]
                 page.on("response",lambda response: api_status.append([response.status,response.url]) if "/api/" in response.url else None)
