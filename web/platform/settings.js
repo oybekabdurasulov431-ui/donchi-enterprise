@@ -37,7 +37,11 @@ function render(){
  case 'backup':
   html=card('Ma’lumotlar bazasi nusxasi','<p>Bazada do‘konlar va mijozlarning maxfiy ma’lumotlari bor. Yuklangan faylni himoyalangan joyda saqlang.</p>'+button('SQLite bazani yuklab olish',false,'button','backup')+'<div class="notice">Render Free’da baza vaqtincha. Avtomatik backup va serverda tiklash hali mavjud emas.</div>');break;
  case 'monitor':
-  html=card('Server monitoringi','<div class="grid">'+Object.entries({'Ish vaqti (soniya)':m.uptime_seconds,'Baza (KB)':Math.ceil(m.database_bytes/1024),'Disk (MB)':Math.floor(m.disk_available_bytes/1048576),'Do‘konlar':m.counts.stores,'Foydalanuvchilar':m.counts.users,'Savdolar':m.counts.sales,'Mahsulotlar':m.counts.products}).map(([a,v])=>stat(a,v)).join('')+'</div><p>'+escapeHtml(m.mode)+' — '+escapeHtml(m.server_time)+'</p>'+button('Yangilash',true,'button','reload'));break;
+  html=card('Server monitoringi','<div class="grid">'+Object.entries({'Ish vaqti (soniya)':m.uptime_seconds,'Baza (KB)':Math.ceil(m.database_bytes/1024),'Disk (MB)':Math.floor(m.disk_available_bytes/1048576),'Do‘konlar':m.counts.stores,'Foydalanuvchilar':m.counts.users,'Savdolar':m.counts.sales,'Mahsulotlar':m.counts.products}).map(([a,v])=>stat(a,v)).join('')+'</div><p>'+escapeHtml(m.mode)+' — '+escapeHtml(m.server_time)+'</p>'+
+  '<div class="notice"><strong>Saqlash holati:</strong> '+escapeHtml(m.storage_warning||'Saqlash holatini tekshiring')+
+  '<p>Baza yaxlitligi: '+escapeHtml(m.integrity_check||'noma’lum')+
+  ' · Avtomatik tashqi backup: '+(m.automatic_offsite_backup?'faol':'mavjud emas')+'</p></div>'+
+  button('Yangilash',true,'button','reload'));break;
  }
  el('content').innerHTML=html;
 }
