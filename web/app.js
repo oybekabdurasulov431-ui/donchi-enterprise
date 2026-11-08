@@ -49,10 +49,22 @@ let session=null;
 let previousSession=null;
 try{previousSession=null}catch{}
 localStorage.removeItem('donchi-clean-session'); // migrate old bearer credential only once
-function rememberUser(user){localStorage.setItem('donchi-clean-last-user',JSON.stringify(user))}
+function rememberUser(user){try{localStorage.setItem('donchi-clean-last-user',JSON.stringify(user))}catch(e){console.warn('Remembering user unavailable',e)}}
 function previousUser(){try{return JSON.parse(localStorage.getItem('donchi-clean-last-user')||'null')}catch{return null}}
 const state={branchId:localStorage.getItem('donchi-clean-branch')||null,data:null,stores:[],role:null,view:'dashboard',storeId:localStorage.getItem('donchi-clean-shop'),online:navigator.onLine,usingCache:false,cart:{},payMode:'cash',posCustomer:'',query:'',theme:localStorage.getItem('donchi-clean-theme')||'light',modal:null,modalData:null,logoDraft:'',mobileNav:false,pending:[],syncing:false,lastReceipt:null};
 document.documentElement.dataset.theme=state.theme;
+// The selected shop/branch is browser-local, but the authenticated account is
+// authoritative. Never carry another account's selection into the next login.
+function adoptAccountStore(user,{newLogin=false}={}){
+  const nextStore=user?.store_id||null;
+  if(newLogin||(state.storeId||null)!==nextStore){
+    state.branchId=null;
+    try{localStorage.removeItem('donchi-clean-branch')}catch(e){console.warn('Branch preference unavailable',e)}
+  }
+  state.storeId=nextStore;
+  try{localStorage.setItem('donchi-clean-shop',nextStore||'')}catch(e){console.warn('Shop preference unavailable',e)}
+}
+
 function snapshotKey(){return `v5:${session?.user?.id||'anon'}:${state.storeId||session?.user?.store_id||''}:${state.branchId||'default'}`}
 function menuRole(){return session?.user?.role||''}
 function can(...roles){return roles.includes(menuRole())}
@@ -72,8 +84,22 @@ async function request(path,{method='GET',body,storeId=state.storeId,branchId=st
 async function load(){
   if(!session)return render();
   try{
-    const result=await request('/bootstrap');
-    state.data=result.data;state.stores=result.stores||[];state.branchId=result.data?.branch_id||state.branchId; if(state.branchId)localStorage.setItem('donchi-clean-branch',state.branchId);state.storeId=menuRole()==='superadmin'?null:(state.data?.store?.id||state.storeId);
+    let result;
+    // An old browser tab may carry a branch from another account or an
+    // ephemeral demo database that was recreated after Render woke up.
+    try{
+      result=await request('/bootstrap',{storeId:session.user.store_id||null});
+    }catch(error){
+      if(error.status!==403||!state.branchId||!session.user.store_id)throw error;
+      // Only retry the read-only bootstrap; never relax mutation permissions.
+      result=await request('/bootstrap',{storeId:session.user.store_id,branchId:null});
+      state.branchId=null;
+      try{localStorage.removeItem('donchi-clean-branch')}catch(e){console.warn('Branch preference unavailable',e)}
+    }
+    state.data=result.data;state.stores=result.stores||[];
+    state.branchId=result.data?.branch_id||null;
+    if(state.branchId){try{localStorage.setItem('donchi-clean-branch',state.branchId)}catch(e){console.warn('Branch preference unavailable',e)}}
+    state.storeId=menuRole()==='superadmin'?null:(session.user.store_id||state.data?.store?.id||null);
     state.usingCache=false;
     // Browser storage can be unavailable (private mode, quota, blocked IndexedDB).
     // Do not mark a successful server response as a failed API request.
@@ -102,8 +128,8 @@ async function signOut(){
   catch(e){if(looksNetwork(e)){toast('Serverga ulanishni tekshiring',true);return}}
   logout();
 }
-async function login(username,password){try{const r=await request('/login',{method:'POST',body:{username,password,totp:document.querySelector('#login-form [name=totp]')?.value||null},storeId:null});session={user:r.user};rememberUser(r.user);state.storeId=r.user.store_id||null;state.branchId=null;state.view=menuRole()==='superadmin'?'platform':menuRole()==='seller'?'pos':menuRole()==='warehouse'?'inventory':'dashboard';state.cart={};if(routePortal())return;await load();toast('Xush kelibsiz, '+r.user.full_name)}catch(e){toast(e.message||'Ulanish xatosi',true)}}
-async function switchShop(shop){if(!shop||shop===state.storeId)return;state.storeId=shop;state.branchId=null;state.cart={};state.posCustomer='';state.query='';state.view=menuRole()==='superadmin'?'platform':'dashboard';await load()}
+async function login(username,password){try{const r=await request('/login',{method:'POST',body:{username,password,totp:document.querySelector('#login-form [name=totp]')?.value||null},storeId:null});session={user:r.user};rememberUser(r.user);adoptAccountStore(r.user,{newLogin:true});state.view=menuRole()==='superadmin'?'platform':menuRole()==='seller'?'pos':menuRole()==='warehouse'?'inventory':'dashboard';state.cart={};if(routePortal())return;await load();toast('Xush kelibsiz, '+r.user.full_name)}catch(e){toast(e.message||'Ulanish xatosi',true)}}
+async function switchShop(shop){if(!shop||shop===state.storeId)return;state.storeId=shop;state.branchId=null;try{localStorage.removeItem('donchi-clean-branch')}catch(e){console.warn(e)}state.cart={};state.posCustomer='';state.query='';state.view=menuRole()==='superadmin'?'platform':'dashboard';await load()}
 async function mutate(path,body,{method='POST',offlineType=null}={}){
   if(!state.online && !offlineType)throw new Error('Bu amal uchun internet kerak');
   try{const r=await request(path,{method,body});await load();return {offline:false,result:r}}
@@ -446,7 +472,7 @@ window.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.modal)closeModa
    }
    previousSession=null;
    if(session){
-     state.storeId=session.user.store_id||null;
+     adoptAccountStore(session.user);
      if(routePortal())return;
      state.view=menuRole()==='superadmin'?'platform':menuRole()==='seller'?'pos':menuRole()==='warehouse'?'inventory':'dashboard';
      await load();
