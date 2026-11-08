@@ -43,7 +43,9 @@ class HandlersRegression(unittest.TestCase):
         return {}
 
     def test_01_public_and_admin_handlers(self):
-        self.ok(self.admin.get("/api/health"))
+        health=self.admin.get("/api/health")
+        self.ok(health)
+        self.assertRegex(health.headers.get("X-Request-ID", ""), r"^[0-9a-f]{16}$")
         self.ok(self.admin.get("/api/bootstrap"))
         r = self.ok(self.admin.get("/api/platform-admin/settings"))
         self.assertEqual(r["profile"]["username"], "tester")
