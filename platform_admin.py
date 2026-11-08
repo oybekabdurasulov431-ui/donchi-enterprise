@@ -111,6 +111,20 @@ def pa_settings(request:Request,user=Depends(get_user)):
     fs=os.statvfs(DATA)
     try: size=DB.stat().st_size
     except OSError: size=0
+    # A non-empty database path does not prove durability. Render's free
+    # service has no persistent disk attached. Only a verified infrastructure
+    # migration can remove this warning.
+    render_free = bool(os.environ.get('RENDER')) and os.environ.get('RENDER_SERVICE_TYPE','web')=='web'
+    storage_warning = (
+        'Render Free SQLite: qayta ishga tushganda ma’lumotlar yo‘qolishi mumkin.'
+        if render_free else
+        'SQLite bazasi ishlayapti, lekin doimiy saqlash alohida tasdiqlanishi kerak.'
+    )
+    try:
+        with connection() as check_db:
+            integrity = check_db.execute('PRAGMA quick_check(1)').fetchone()[0]
+    except sqlite3.DatabaseError:
+        integrity = 'database_error'
     return {'profile':{'username':user['username'],'full_name':user['full_name']},
             'brand':{k:prefs[k] for k in ('brand_name','tagline','support_phone','support_email','logo')},
             'notifications':{k:prefs[k] for k in ('telegram_enabled','telegram_chat_id','notify_new_store','notify_service_errors')},
@@ -118,7 +132,11 @@ def pa_settings(request:Request,user=Depends(get_user)):
             'plans':plans,'sessions':sess,'audit':logs,'totp_enabled':bool(twofa and twofa['enabled']),
             'monitor':{'uptime_seconds':int(time.monotonic()-STARTED),'database_bytes':size,
                        'disk_available_bytes':fs.f_bavail*fs.f_frsize,'counts':counts,'server_time':now(),
-                       'mode':'SQLite (Render Free: vaqtinchalik)','backup_restore_supported':False}}
+                       'mode':'SQLite (doimiy saqlash tasdiqlanmagan)',
+                       'storage_warning':storage_warning,
+                       'integrity_check':integrity,
+                       'automatic_offsite_backup':False,
+                       'backup_restore_supported':False}}
 
 @app.put('/api/platform-admin/profile')
 def pa_profile(body:ProfileIn,user=Depends(get_user)):
@@ -246,7 +264,11 @@ def pa_backup(user=Depends(get_user)):
         source=sqlite3.connect(DB)
         try:
             destination=sqlite3.connect(path)
-            try: source.backup(destination)
+            try:
+                source.backup(destination)
+                check=destination.execute('PRAGMA quick_check(1)').fetchone()
+                if not check or check[0]!='ok':
+                    raise sqlite3.DatabaseError('Backup integrity check failed')
             finally: destination.close()
         finally: source.close()
         with connection(write=True) as db: audit(db,None,user,'PLATFORM_DB_BACKUP_DOWNLOADED',{})
