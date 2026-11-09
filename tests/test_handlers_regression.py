@@ -51,12 +51,16 @@ class HandlersRegression(unittest.TestCase):
         self.assertEqual(r["profile"]["username"], "tester")
         self.assertGreaterEqual(len(r["plans"]), 4)
         self.assertIn("monitor", r)
+        diag = self.ok(self.admin.get('/api/platform-admin/diagnostics'))['diagnostics']
+        self.assertEqual(diag['source'], 'process_memory')
+        self.assertGreaterEqual(diag['request_counts'].get('total', 0), 1)
         self.assertIn("storage_warning", r["monitor"])
         self.assertIn("integrity_check", r["monitor"])
         self.assertEqual(r["monitor"]["integrity_check"], "ok")
         self.assertFalse(r["monitor"]["automatic_offsite_backup"])
         unauth = TestClient(server.app)
         self.ok(unauth.get("/api/platform-admin/settings"), 401)
+        self.ok(unauth.get('/api/platform-admin/diagnostics'),401)
         self.ok(unauth.post("/api/products",json={}), 401)
 
     def test_02_store_owner_crud_sales_and_debt(self):
@@ -102,6 +106,7 @@ class HandlersRegression(unittest.TestCase):
         self.ok(owner.post("/api/shifts/close",json={"counted_cash":0}))
         self.ok(owner.get("/api/export"))
         self.ok(owner.get("/api/platform-admin/settings"),403)
+        self.ok(owner.get('/api/platform-admin/diagnostics'),403)
 
     def test_03_platform_admin_security_and_plans(self):
         r=self.ok(self.admin.put("/api/platform-admin/plans/Business",json={
