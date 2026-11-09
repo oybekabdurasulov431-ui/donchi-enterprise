@@ -23,6 +23,7 @@ from fastapi import FastAPI, HTTPException, Request, Depends, Body
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from operational_metrics import record as record_operational_metric
 
 BASE = Path(__file__).resolve().parent
 DATA = Path(os.environ.get('DONCHI_DATA_DIR', os.environ.get('YEMPRO_DATA_DIR', BASE / 'data'))) # legacy key supported
@@ -295,6 +296,7 @@ def shift_money(db,shift):
 @app.middleware('http')
 async def sec_headers(request:Request,call_next):
     request_id = secrets.token_hex(8)
+    started = time.monotonic()
     try:
         resp = await call_next(request)
     except Exception:
@@ -305,6 +307,9 @@ async def sec_headers(request:Request,call_next):
             content={'detail':'Serverda kutilmagan xatolik. So‘rov kodini administratorga yuboring.',
                      'request_id':request_id})
     resp.headers['X-Request-ID']=request_id
+    if request.url.path.startswith('/api/'):
+        record_operational_metric(request.method, resp.status_code,
+                                  (time.monotonic() - started) * 1000, request_id)
     resp.headers['X-Content-Type-Options']='nosniff'
     resp.headers['X-Frame-Options']='DENY'
     resp.headers['Referrer-Policy']='no-referrer'
