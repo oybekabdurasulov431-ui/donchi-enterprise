@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 from server import app, DB, DATA, connection, onerow, allrows, audit, get_user, role, now, checkpwd, COOKIE_NAME
+from operational_metrics import snapshot as metrics_snapshot
 
 STARTED=time.monotonic()
 DEFAULTS={'brand_name':'DONCHI Enterprise','tagline':'Savdo, ombor va nasiyani bir joydan boshqaring','support_phone':'','support_email':'','logo':'',
@@ -137,6 +138,12 @@ def pa_settings(request:Request,user=Depends(get_user)):
                        'integrity_check':integrity,
                        'automatic_offsite_backup':False,
                        'backup_restore_supported':False}}
+
+@app.get('/api/platform-admin/diagnostics')
+def pa_diagnostics(user=Depends(get_user)):
+    _admin(user)
+    return {'ok': True, 'diagnostics': metrics_snapshot()}
+
 
 @app.put('/api/platform-admin/profile')
 def pa_profile(body:ProfileIn,user=Depends(get_user)):

@@ -41,7 +41,9 @@ function render(){
   '<div class="notice"><strong>Saqlash holati:</strong> '+escapeHtml(m.storage_warning||'Saqlash holatini tekshiring')+
   '<p>Baza yaxlitligi: '+escapeHtml(m.integrity_check||'noma’lum')+
   ' · Avtomatik tashqi backup: '+(m.automatic_offsite_backup?'faol':'mavjud emas')+'</p></div>'+
-  button('Yangilash',true,'button','reload'));break;
+  button('Yangilash',true,'button','reload')+
+  ' '+button('API diagnostikasi',true,'button','diagnostics')+
+  '<div id="diagnostics-output" class="muted" style="margin-top:14px" aria-live="polite">API so‘rovlarini tekshirish uchun diagnostikani oching.</div>');break;
  }
  el('content').innerHTML=html;
 }
@@ -51,6 +53,22 @@ document.addEventListener('click',async event=>{
  const action=event.target.closest('[data-action]')?.dataset.action;if(!action)return;
  try{
   if(action==='reload')return reload();
+  if(action==='diagnostics'){
+    const result=await api('/platform-admin/diagnostics');
+    const diag=result.diagnostics, out=el('diagnostics-output');
+    if(out){
+      const counts=Object.entries(diag.request_counts||{}).map(([status,n])=>stat(status,n)).join('');
+      const errors=(diag.recent_server_errors||[]).map(x=>'<p>'+
+        escapeHtml(x.at)+' · '+escapeHtml(x.status)+' · so‘rov: <code>'+
+        escapeHtml(x.request_id)+'</code></p>').join('');
+      out.innerHTML='<div class="grid">'+
+        stat('O‘rtacha javob (ms)',diag.average_latency_ms)+
+        stat('Eng sekin (ms)',diag.max_latency_ms)+counts+
+        '</div><p>'+escapeHtml(diag.note)+'</p><h2>Oxirgi server xatolari</h2>'+
+        (errors||'<p>Joriy jarayonda 5xx xatolar yo‘q.</p>');
+    }
+    return;
+  }
   if(action==='start2fa'){S.secret=(await api('/platform-admin/2fa/start','POST')).secret;render();return}
   if(action==='revoke'){if(confirm('Boshqa barcha qurilmalardan chiqilsinmi?')){await api('/platform-admin/sessions/revoke-others','POST');flash('Boshqa sessiyalar tugatildi');await reload()}return}
   if(action==='telegramtest'){await api('/platform-admin/notifications/test','POST');flash('Test xabar yuborildi');return}

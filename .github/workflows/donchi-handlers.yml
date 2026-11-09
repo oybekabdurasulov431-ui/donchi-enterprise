@@ -4,6 +4,7 @@ on:
     branches:
       - main
       - 'improve/**'
+      - 'feature/**'
   pull_request:
     branches:
       - main
@@ -22,7 +23,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
       - name: Verify Python compiles
-        run: python -m compileall -q server.py v5_features.py platform_admin.py hosted_bootstrap.py
+        run: python -m compileall -q server.py v5_features.py platform_admin.py hosted_bootstrap.py operational_metrics.py scripts/backup_guard.py scripts/postgres_preflight.py
       - name: Check browser JavaScript syntax
         run: |
           node --check web/app.js
@@ -33,6 +34,8 @@ jobs:
           python -c "from pathlib import Path; s=Path('web/platform/settings.html').read_text(); assert '<script src=' in s and '<script>' not in s"
       - name: Run database-isolated handler regression
         run: python -m unittest discover -s tests -p 'test_handlers_regression.py' -v
+      - name: Test safe backup, offline restore and PostgreSQL preflight
+        run: python -m unittest discover -s tests -p 'test_data_protection.py' -v
       - name: Install Chromium browser test dependencies
         run: |
           pip install 'playwright>=1.54,<2'
