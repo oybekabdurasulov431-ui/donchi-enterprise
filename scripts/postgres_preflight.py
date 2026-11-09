@@ -5,6 +5,7 @@ It reports schema inventory, SQLite dependencies, tenant checks and a
 migration readiness checklist, without outputting customer records or secrets.
 """
 from __future__ import annotations
+from contextlib import closing
 import argparse
 import json
 from pathlib import Path
@@ -24,7 +25,7 @@ def inventory(path: Path) -> dict:
     if not path.is_file():
         raise FileNotFoundError("Database not found; migration readiness cannot be checked")
     uri = "file:" + quote(path.resolve().as_posix(), safe="/:") + "?mode=ro"
-    with sqlite3.connect(uri, uri=True) as db:
+    with closing(sqlite3.connect(uri, uri=True)) as db:
         check = db.execute("PRAGMA integrity_check").fetchone()
         if not check or check[0] != "ok":
             raise ValueError("SQLite database integrity check failed")
