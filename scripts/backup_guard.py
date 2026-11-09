@@ -5,6 +5,7 @@ Restore is intentionally create-only: NEVER overwrites an existing path.
 Stdlib only, usable on Windows and Linux.
 """
 from __future__ import annotations
+from contextlib import closing
 
 import argparse
 import hashlib
@@ -30,7 +31,7 @@ def _readonly_connect(path: Path) -> sqlite3.Connection:
 def verify(path: Path) -> dict:
     """Verify structural and foreign-key consistency without changing bytes."""
     path = Path(path)
-    with _readonly_connect(path) as db:
+    with closing(_readonly_connect(path)) as db:
         integrity = db.execute("PRAGMA integrity_check").fetchone()
         if not integrity or integrity[0] != "ok":
             raise ValueError("SQLite integrity check failed")
@@ -91,7 +92,7 @@ def backup(source: Path, destination: Path) -> dict:
     try:
         os.fchmod(fd, 0o600) if hasattr(os, "fchmod") else None
         os.close(fd)
-        with _readonly_connect(source) as src, sqlite3.connect(temp_path) as dst:
+        with closing(_readonly_connect(source)) as src, closing(sqlite3.connect(temp_path)) as dst:
             src.backup(dst, pages=128, sleep=0.05)
         after = verify(temp_path)
         if before["schema_sha256"] != after["schema_sha256"]:
