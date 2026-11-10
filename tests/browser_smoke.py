@@ -60,6 +60,11 @@ try:
             page.locator('input[name="password"]').fill(password)
             page.locator('form#login-form button[type="submit"]').click()
             page.locator('nav.sidebar-nav').wait_for(timeout=12000)
+            # Cookie persists across full reload: no new password prompt.
+            page.reload(wait_until="domcontentloaded")
+            page.locator('nav.sidebar-nav').wait_for(timeout=12000)
+            assert page.locator('#login-form').count()==0, "Login unexpectedly shown on reload"
+            assert page.locator('[data-a="install-app"]').count()>=1, "Install CTA absent"
             for section in sections:
                 link=page.locator(f'nav.sidebar-nav [data-a="nav"][data-v="{section}"]')
                 if link.count()==0:
@@ -103,6 +108,11 @@ try:
                 if errors: raise AssertionError("Owner browser form errors: "+str(errors))
                 print("PASS: browser product form saved",flush=True)
             if username=="admin_smoke":
+                # No more long, overlapping fixed settings button.
+                page.locator('[data-a="nav"][data-v="platform"]').click()
+                page.locator('.donchi-insight-card').first.wait_for(timeout=5000)
+                assert page.get_by_text("Render Free").count()==0
+                assert page.locator('.donchi-settings-link').count()==1
                 api_status=[]
                 page.on("response",lambda response: api_status.append([response.status,response.url]) if "/api/" in response.url else None)
                 resp=page.goto(url+"/platform/settings.html",wait_until="domcontentloaded")
@@ -130,6 +140,32 @@ try:
             ["dashboard","pos","shifts","returns","products","inventory","lots",
              "branches","deliveries","debts","customers","crm","finance",
              "insights","updates","analytics","sync"])
+        # Mobile viewport + manual PWA guide. No browser install is faked as success.
+        mobile=browser.new_page(viewport={"width":390,"height":844},device_scale_factor=2)
+        mobile_errors=[]
+        mobile.on("pageerror",lambda error:mobile_errors.append(str(error)))
+        mobile.goto(url+"/app/",wait_until="domcontentloaded")
+        mobile.locator('input[name="username"]').fill("owner_smoke")
+        mobile.locator('input[name="password"]').fill(OWNER_PASSWORD)
+        mobile.locator('#login-form button[type="submit"]').click()
+        mobile.locator('nav.sidebar-nav').wait_for(timeout=12000)
+        assert mobile.locator('[data-a="install-app"]').count()>0
+        mobile.locator('[data-a="install-app"]').first.click()
+        mobile.locator('#donchi-install-guide').wait_for(timeout=4000)
+        assert mobile.get_by_text("o‘rnatish",exact=False).count()>0
+        mobile.locator('[data-close-install]').click()
+        assert mobile.locator('#donchi-install-guide').count()==0
+        mobile.locator('.mobile-toggle').click()
+        mobile.locator('.sidebar.open').wait_for(timeout=4000)
+        mobile.locator('.sidebar.open [data-v="pos"]').click()
+        mobile.locator('.donchi-checkout-warning').wait_for(timeout=5000)
+        assert "Kassa smenasi yopiq" in mobile.locator('.donchi-checkout-warning').inner_text()
+        assert mobile.locator('[data-a="make-sale"]').is_disabled()
+        mobile.locator('.donchi-checkout-warning [data-a="open-shift"]').click()
+        mobile.locator('#modal-form').wait_for(timeout=5000)
+        assert "Boshlang‘ich" in mobile.locator('#modal-form').inner_text()
+        assert not mobile_errors, mobile_errors
+        mobile.close()
         browser.close()
         print("PASS: Chromium all five roles (Super Admin, Owner, Manager, Seller, Warehouse) opened permitted panels without JavaScript errors.")
 finally:
