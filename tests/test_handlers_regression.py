@@ -347,5 +347,50 @@ class HandlersRegression(unittest.TestCase):
         self.ok(warehouse.get("/api/platform-admin/backup"),403)
 
 
+    def test_12_remembered_cookie_logout_and_password_rotation(self):
+        # Independent test account: never rotates the real platform administrator.
+        username = "session_owner_regression"
+        original = "SessionOriginalOnly2026!"
+        replacement = "SessionUpdatedOnly2026!"
+        self.ok(self.admin.post("/api/stores",json={
+            "name":"Remembered Session Test Shop","username":username,
+            "owner_name":"Cookie Session Test","password":original,"plan":"Business"
+        }))
+        device = TestClient(server.app)
+        self.ok(device.post("/api/login",json={"username":username,"password":original}))
+        current=self.ok(device.get("/api/session"))
+        self.assertEqual(current["user"]["username"],username)
+        cookie=device.cookies.get("yempro_session")
+        self.assertTrue(cookie)
+        self.ok(device.get("/api/session"))
+        self.assertTrue(device.cookies.get("yempro_session"))
+        self.ok(device.post("/api/account/password",json={
+            "old_password":original,"new_password":replacement
+        }))
+        self.ok(device.get("/api/session"),401)
+        self.ok(device.post("/api/login",json={"username":username,"password":original}),401)
+        self.ok(device.post("/api/login",json={"username":username,"password":replacement}))
+        self.ok(device.get("/api/session"))
+        self.ok(device.post("/api/logout"))
+        self.ok(device.get("/api/session"),401)
+        anonymous=TestClient(server.app)
+        self.ok(anonymous.get("/api/session"),401)
+
+    def test_13_pwa_assets_and_safe_install_shell(self):
+        for path in ("/manifest.webmanifest","/icon-192.png","/icon-512.png","/premium.css?v=2.0.0",
+                     "/pwa-install.js?v=2.0.0","/sw.js",
+                     "/app/","/platform/","/platform/settings.html"):
+            response=self.admin.get(path)
+            self.assertEqual(response.status_code,200,path)
+        manifest=self.admin.get("/manifest.webmanifest").json()
+        self.assertEqual(manifest["display"],"standalone")
+        self.assertEqual(manifest["icons"][0]["sizes"],"192x192")
+        self.assertEqual(manifest["icons"][1]["sizes"],"512x512")
+        self.assertEqual(self.admin.get("/icon-192.png").content[:8],b"\x89PNG\r\n\x1a\n")
+        source=self.admin.get("/sw.js").text
+        self.assertIn("url.pathname.startsWith('/api/')",source)
+        self.assertIn("donchi-enterprise-v2.0.0",source)
+
+
 if __name__=="__main__":
     unittest.main(verbosity=2)
