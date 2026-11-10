@@ -1,1 +1,56 @@
-{"name": "DONCHI Enterprise", "short_name": "DONCHI", "description": "Savdo, ombor va nasiya boshqaruv tizimi", "start_url": "/app/", "display": "standalone", "background_color": "#08362f", "theme_color": "#0b5d4f", "icons": [{"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}]}
+{
+  "id": "/app/",
+  "name": "DONCHI Enterprise 2.0",
+  "short_name": "DONCHI",
+  "description": "Do‘konlar uchun savdo, ombor va nasiya boshqaruv platformasi",
+  "start_url": "/app/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#08362f",
+  "theme_color": "#087f6d",
+  "orientation": "any",
+  "categories": [
+    "business",
+    "productivity"
+  ],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Sotuvchi / POS",
+      "short_name": "POS",
+      "url": "/app/",
+      "icons": [
+        {
+          "src": "/icon.svg",
+          "sizes": "any",
+          "type": "image/svg+xml"
+        }
+      ]
+    },
+    {
+      "name": "Super Admin",
+      "short_name": "Admin",
+      "url": "/platform/",
+      "icons": [
+        {
+          "src": "/icon.svg",
+          "sizes": "any",
+          "type": "image/svg+xml"
+        }
+      ]
+    }
+  ]
+}
