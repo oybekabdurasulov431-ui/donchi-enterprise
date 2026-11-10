@@ -6,7 +6,7 @@ const SHELL=[
   '/style.css?v=2.0.0', '/premium.css?v=2.0.0',
   '/app.js?v=2.0.0','/v5.js?v=1.1.0','/pwa-install.js?v=2.0.0',
   '/platform-admin.js?v=1.2.0','/platform-admin.css?v=2.0.0',
-  '/platform/settings.js?v=1.3.0','/icon.svg','/manifest.webmanifest'
+  '/platform/settings.js?v=1.3.0','/icon.svg','/icon-192.png','/icon-512.png','/manifest.webmanifest'
 ];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE)
