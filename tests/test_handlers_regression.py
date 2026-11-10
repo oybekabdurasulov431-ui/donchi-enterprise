@@ -377,13 +377,16 @@ class HandlersRegression(unittest.TestCase):
         self.ok(anonymous.get("/api/session"),401)
 
     def test_13_pwa_assets_and_safe_install_shell(self):
-        for path in ("/manifest.webmanifest","/premium.css?v=2.0.0",
+        for path in ("/manifest.webmanifest","/icon-192.png","/icon-512.png","/premium.css?v=2.0.0",
                      "/pwa-install.js?v=2.0.0","/sw.js",
                      "/app/","/platform/","/platform/settings.html"):
             response=self.admin.get(path)
             self.assertEqual(response.status_code,200,path)
         manifest=self.admin.get("/manifest.webmanifest").json()
         self.assertEqual(manifest["display"],"standalone")
+        self.assertEqual(manifest["icons"][0]["sizes"],"192x192")
+        self.assertEqual(manifest["icons"][1]["sizes"],"512x512")
+        self.assertEqual(self.admin.get("/icon-192.png").content[:8],b"\x89PNG\r\n\x1a\n")
         source=self.admin.get("/sw.js").text
         self.assertIn("url.pathname.startsWith('/api/')",source)
         self.assertIn("donchi-enterprise-v2.0.0",source)
