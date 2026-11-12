@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="uz"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DONCHI Owner Pro 3.0 — beta</title><meta name="robots" content="noindex">
+<style>
+:root{font-family:system-ui,-apple-system,Segoe UI,sans-serif;color-scheme:dark;background:#0b1525;color:#ebf2ff}
+*{box-sizing:border-box}body{margin:0}header{padding:18px max(16px,5vw);display:flex;justify-content:space-between;align-items:center;background:#101e32;border-bottom:1px solid #263b56;gap:12px;flex-wrap:wrap}
+a{color:#a8e8d1}header a{padding:9px 14px;border:1px solid #456073;border-radius:10px;text-decoration:none}
+main{max-width:1350px;margin:auto;padding:28px 18px}.muted{color:#9db1c9}h1{margin:3px 0;font-size:clamp(24px,3vw,36px)}h2{font-size:18px;margin:0 0 12px}section{margin-top:22px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(195px,1fr));gap:13px}.card,.panel{background:#14243a;border:1px solid #29405b;border-radius:16px;padding:18px}.card span{font-size:13px;color:#a6bdd5}.card strong{display:block;font-size:24px;margin-top:8px;overflow-wrap:anywhere}
+.layout{display:grid;grid-template-columns:1fr 1fr;gap:14px}.layout section{min-width:0}.bar{display:flex;align-items:center;gap:12px;margin:7px 0}.bar label{min-width:90px;font-size:12px}.track{flex:1;height:14px;background:#293d54;border-radius:9px;overflow:hidden}.fill{height:100%;background:#38bd98;border-radius:9px;min-width:0}
+table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;padding:10px 7px;border-bottom:1px solid #30445e}th{color:#a6bdd5} .table-scroll{overflow:auto}button{background:#29b88a;border:0;border-radius:9px;padding:10px 14px;font-weight:700;cursor:pointer;color:#081a1b}
+.notice{border:1px solid #886b33;background:#302a20;color:#f5d79c;padding:12px;border-radius:12px;margin:16px 0}#error{color:#ffc1c1}footer{margin:35px 0;font-size:12px;color:#9db1c9}
+@media(max-width:780px){.layout{grid-template-columns:1fr}header{padding:16px}}
+</style></head><body>
+<header><strong>◈ DONCHI OWNER PRO <span class="muted">3.0 BETA</span></strong><a href="/app/">← Do‘kon paneliga qaytish</a></header>
+<main><p class="muted" id="store">Yuklanmoqda…</p><h1>Do‘kon egasi boshqaruv markazi</h1>
+<p class="muted">Haqiqiy tizim ma’lumotlari • o‘qish rejimi • faqat Owner</p>
+<div class="notice">Sof foyda taxminiy hisoblanadi: tannarx yoki xarajat yozuvlari to‘liq bo‘lmasligi mumkin. Bu sahifa hali beta.</div>
+<div id="error" role="alert"></div><button type="button" id="reload">Yangilash</button>
+<section class="cards" id="kpis"></section>
+<div class="layout">
+<section class="panel"><h2>Oxirgi 7 kun savdosi</h2><div id="sales"></div></section>
+<section class="panel"><h2>Kam qolgan mahsulotlar</h2><div id="inventory"></div></section>
+<section class="panel"><h2>Mijoz qarzlari</h2><div id="debts"></div></section>
+<section class="panel"><h2>Kassa smenalari</h2><div id="cash"></div></section>
+<section class="panel" style="grid-column:1/-1"><h2>Audit — oxirgi harakatlar</h2><div id="audit"></div></section>
+</div><footer>DONCHI Owner Pro 3.0 — tashqi reklama emas, kirish huquqi bilan himoyalangan ichki hisobot. 200 ta yozuvgacha ko‘rsatiladi.</footer>
+</main><script>
+'use strict';
+const esc=v=>String(v??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money=v=>new Intl.NumberFormat('uz-UZ',{maximumFractionDigits:2}).format(Number(v)||0)+' so‘m';
+const el=id=>document.getElementById(id);
+async function get(path){let r=await fetch('/api/owner-pro/'+path,{credentials:'same-origin',cache:'no-store'});if(!r.ok)throw Error(r.status===401?'Sessiya tugagan. Saytga qayta kiring.':r.status===403?'Faqat do‘kon egasi bu sahifani ochishi mumkin.':'Ma’lumotni olishda xato: '+r.status);return r.json()}
+function table(headers,items){if(!items.length)return '<p class="muted">Hozircha ma’lumot yo‘q.</p>';return '<div class="table-scroll"><table><thead><tr>'+headers.map(h=>'<th>'+esc(h)+'</th>').join('')+'</tr></thead><tbody>'+items.map(row=>'<tr>'+row.map(v=>'<td>'+esc(v)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>'}
+async function load(){el('error').textContent='';el('reload').disabled=true;try{
+const [o,i,d,c,a]=await Promise.all(['overview','inventory','receivables','cash','audit'].map(get));
+el('store').textContent=o.store.name;
+const k=o.kpis;
+const cards=[['Bugungi savdo',money(k.today_revenue)],['Jami sof tushum',money(k.net_revenue_all_time)],['Taxminiy foyda',money(k.estimated_profit_all_time)],['Mijoz qarzlari',money(k.receivables)],['Ombor qiymati',money(k.stock_value_at_recorded_cost)],['Kam qolgan tovarlar',String(k.low_stock_count)]];
+el('kpis').innerHTML=cards.map(([name,value])=>'<article class="card"><span>'+esc(name)+'</span><strong>'+esc(value)+'</strong></article>').join('');
+const max=Math.max(1,...o.weekly_sales.map(x=>Math.max(0,x.revenue)));
+el('sales').innerHTML=o.weekly_sales.map(x=>'<div class="bar"><label>'+esc(x.day)+'</label><div class="track"><div class="fill" style="width:'+Math.min(100,Math.max(0,x.revenue)/max*100)+'%"></div></div><small>'+esc(money(x.revenue))+'</small></div>').join('');
+el('inventory').innerHTML=table(['Mahsulot','Qoldiq','Minimum'],i.low_stock.map(x=>[x.name,x.stock+' '+x.unit,x.min_stock+' '+x.unit]));
+el('debts').innerHTML=table(['Mijoz','Qarz'],d.customers.map(x=>[x.name,money(x.balance)]));
+el('cash').innerHTML=table(['Kassir','Holat','Farq'],c.shifts.map(x=>[x.cashier,x.status,x.variance==null?'—':money(x.variance)]));
+el('audit').innerHTML=table(['Vaqt','Xodim','Harakat'],a.events.map(x=>[x.created_at,x.username,x.action]));
+}catch(e){el('error').textContent=e.message}finally{el('reload').disabled=false}}
+el('reload').addEventListener('click',load);load();
+</script></body></html>
