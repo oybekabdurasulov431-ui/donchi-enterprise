@@ -861,6 +861,16 @@ def update_inquiry(inquiry_id:str,payload:InquiryStatus,user=Depends(get_user)):
 
 extra_summary,smart_insights,branch_for,stock_at,adjust_branch,consume_lots = __import__('v5_features').install(app)
 
+# Owner Pro 3.0: read-only, owner-only isolated analytics endpoints.
+from owner_pro import install as install_owner_pro
+install_owner_pro(app, get_user=get_user, connection=connection, store_from=store_from,
+                  onerow=onerow, allrows=allrows, role=role,
+                  require_feature=require_feature, local_tz=LOCAL_TZ)
+
+from owner_notifications import install as install_owner_notifications
+install_owner_notifications(app, get_user=get_user, connection=connection,
+                            store_from=store_from, role=role, local_tz=LOCAL_TZ)
+
 @app.get('/api/health')
 def health():
     """Readiness: verify SQLite is actually accessible before reporting success."""
