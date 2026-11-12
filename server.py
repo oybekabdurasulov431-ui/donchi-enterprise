@@ -867,6 +867,10 @@ install_owner_pro(app, get_user=get_user, connection=connection, store_from=stor
                   onerow=onerow, allrows=allrows, role=role,
                   require_feature=require_feature, local_tz=LOCAL_TZ)
 
+from owner_notifications import install as install_owner_notifications
+install_owner_notifications(app, get_user=get_user, connection=connection,
+                            store_from=store_from, role=role, local_tz=LOCAL_TZ)
+
 @app.get('/api/health')
 def health():
     """Readiness: verify SQLite is actually accessible before reporting success."""
