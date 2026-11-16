@@ -14,7 +14,7 @@ LOG = logging.getLogger(__name__)
 def install(app):
     from server import connection, allrows, onerow, now, uid, get_user, store_from, http
 
-    with connection(write=True) as db:
+    with connection() as db:
         db.executescript("""
         CREATE TABLE IF NOT EXISTS store_notifications(
           id TEXT PRIMARY KEY,
