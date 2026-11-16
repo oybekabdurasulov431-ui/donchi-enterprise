@@ -26,6 +26,10 @@ def install(app):
     """
     with connection() as db:
         db.executescript(schema)
+        existing=(db.has_column('customers','customer_type') if hasattr(db,'has_column')
+                  else bool(db.execute("SELECT 1 FROM pragma_table_info('customers') WHERE name='customer_type'").fetchone()))
+        if not existing:
+            db.execute("ALTER TABLE customers ADD COLUMN customer_type TEXT NOT NULL DEFAULT 'person'")
 
     class CompanyIn(BaseModel):
         name: str
