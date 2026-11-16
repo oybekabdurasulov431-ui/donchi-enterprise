@@ -134,6 +134,31 @@ class HandlersRegression(unittest.TestCase):
         self.ok(owner.get("/api/bootstrap"))
         self.ok(owner.post("/api/expenses",json={"category":"Rent","amount":3000,"note":"test"}))
         self.ok(owner.post("/api/shifts/close",json={"counted_cash":0}))
+        # Category CRUD is scoped to this store and does not erase products.
+        cat=self.ok(owner.post("/api/v8/categories",json={"name":"Yemlar"}))["id"]
+        self.assertIn("Yemlar",[x["name"] for x in self.ok(owner.get("/api/v8/categories"))["items"]])
+        self.ok(owner.put(f"/api/v8/categories/{cat}",json={"name":"Optom yemlar"}))
+        self.ok(owner.delete(f"/api/v8/categories/{cat}"))
+        self.ok(owner.get("/api/v8/categories"))
+        # Contact edits preserve historical invoices and debts.
+        self.ok(owner.put(f"/api/v8/customers/{customer}",json={
+            "name":"Client Updated","phone":"998901234567","address":"Denov","customer_type":"shop"}))
+        self.ok(owner.delete(f"/api/v8/customers/{customer}"),409)
+        disposable=self.ok(owner.post("/api/customers",json={"name":"Archive Shop","customer_type":"shop"}))["id"]
+        self.ok(owner.delete(f"/api/v8/customers/{disposable}"))
+        self.assertNotIn(disposable,[c["id"] for c in self.ok(owner.get("/api/bootstrap"))["data"]["customers"]])
+        self.ok(owner.put(f"/api/v8/companies/{company}",json={"name":"Factory Renamed","phone":"12345","address":"New location"}))
+        self.assertEqual(self.ok(owner.get("/api/v6/companies"))["companies"][0]["debt"],70000)
+        self.ok(owner.delete(f"/api/v8/companies/{company}"),409)
+        purchase_line=self.ok(owner.get("/api/v6/companies"))["companies"][0]["purchases"][0]["id"]
+        self.ok(owner.post(f"/api/v8/company-purchases/{purchase_line}/return",json={"qty":1}))
+        company_history=self.ok(owner.get("/api/v6/companies"))["companies"][0]
+        self.assertEqual(company_history["debt"],30000)
+        self.assertEqual(company_history["purchases"][0]["returned_qty"],1)
+        self.assertEqual(len(company_history["returns"]),1)
+        self.ok(owner.post(f"/api/v6/companies/{company}/pay",json={"amount":30000}))
+        self.ok(owner.delete(f"/api/v8/companies/{company}"))
+        self.assertFalse(self.ok(owner.get("/api/v6/companies"))["companies"])
         self.ok(owner.get("/api/export"))
         self.ok(owner.get("/api/platform-admin/settings"),403)
 

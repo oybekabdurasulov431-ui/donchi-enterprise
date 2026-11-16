@@ -51,16 +51,18 @@ def install(app):
         amount: float
 
     def company_snapshot(db,sid):
-        companies = allrows(db, 'SELECT * FROM supplier_companies WHERE store_id=? ORDER BY name', (sid,))
+        companies = allrows(db, 'SELECT * FROM supplier_companies WHERE store_id=? AND active=1 ORDER BY name', (sid,))
         bills = allrows(db, 'SELECT * FROM supplier_bills WHERE store_id=? ORDER BY created_at DESC', (sid,))
         purchases = allrows(db, 'SELECT p.*,pr.name AS product_name FROM company_purchase_lines p JOIN products pr ON pr.id=p.product_id WHERE p.store_id=? ORDER BY p.created_at DESC LIMIT 1000', (sid,))
         payments = allrows(db, 'SELECT * FROM supplier_payments WHERE store_id=? ORDER BY created_at DESC LIMIT 1000', (sid,))
+        returned = allrows(db, 'SELECT r.*,p.name AS product_name FROM company_purchase_returns r JOIN products p ON p.id=r.product_id WHERE r.store_id=? ORDER BY r.created_at DESC LIMIT 1000', (sid,))
         bill_index={b['id']:b for b in bills}
         for purchase in purchases:
             bill=bill_index.get(purchase['bill_id'])
             purchase['bill_total']=float(bill['amount']) if bill else float(purchase['total'])
             purchase['bill_paid']=float(bill['paid']) if bill else 0
             purchase['bill_debt']=round(max(0,purchase['bill_total']-purchase['bill_paid']),2)
+            purchase['returned_qty']=round(sum(float(r['quantity']) for r in returned if r['purchase_line_id']==purchase['id']),2)
             purchase['reference']=bill['reference'] if bill else ''
             purchase['due_on']=bill['due_on'] if bill else None
         for c in companies:
@@ -71,6 +73,7 @@ def install(app):
             c['bills'] = own
             c['purchases'] = [p for p in purchases if p['company_id']==c['id']]
             c['payments'] = [p for p in payments if any(b['id']==p['bill_id'] for b in own)]
+            c['returns'] = [r for r in returned if r['company_id']==c['id']]
         return companies
 
     @app.get('/api/v6/companies')
@@ -99,7 +102,7 @@ def install(app):
         with connection(write=True) as db:
             shop=store_from(request,user,db,['owner','manager'])
             require_feature(db,shop,'finance')
-            company=onerow(db,'SELECT id,name FROM supplier_companies WHERE store_id=? AND id=?',
+            company=onerow(db,'SELECT id,name FROM supplier_companies WHERE store_id=? AND id=? AND active=1',
                            (shop['id'],payload.company_id))
             if not company:http(404,'Korxona topilmadi')
             branch=branch_for(db,shop['id'],request)

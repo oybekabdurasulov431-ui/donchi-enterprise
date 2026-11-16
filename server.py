@@ -281,7 +281,7 @@ def require_feature(db,store,module):
 def summarize(db,store):
     store_id=store['id']
     p=allrows(db,'SELECT * FROM products WHERE store_id=? AND active=1 ORDER BY name',(store_id,))
-    c=allrows(db,'SELECT * FROM customers WHERE store_id=? ORDER BY name',(store_id,))
+    c=allrows(db,'SELECT * FROM customers WHERE store_id=? AND active=1 ORDER BY name',(store_id,))
     sales=allrows(db,'SELECT s.*,c.name AS customer_name,u.full_name AS cashier_name FROM sales s LEFT JOIN customers c ON c.id=s.customer_id LEFT JOIN users u ON u.id=s.cashier_id WHERE s.store_id=? ORDER BY s.created_at DESC LIMIT 250',(store_id,))
     for sale in sales:
         sale['lines']=allrows(db,'SELECT id,product_id,name,qty,unit,price,cost FROM sale_items WHERE sale_id=?',(sale['id'],))
@@ -640,7 +640,7 @@ def create_sale(payload:SaleIn,request:Request,user=Depends(get_user)):
         active_shift=open_shift_for(db,store['id'],user['id'])
         if not active_shift:http(409,'Savdodan oldin kassa smenasini oching')
         branch=branch_for(db,store['id'],request)
-        if payload.customer_id and not onerow(db,'SELECT id FROM customers WHERE id=? AND store_id=?',(payload.customer_id,store['id'])):
+        if payload.customer_id and not onerow(db,'SELECT id FROM customers WHERE id=? AND store_id=? AND active=1',(payload.customer_id,store['id'])):
             http(422,'Mijoz topilmadi (offline operatsiyalar tartibini tekshiring)')
         calc=[]; total=0
         ids=[x.product_id for x in payload.lines]
@@ -907,6 +907,7 @@ def update_inquiry(inquiry_id:str,payload:InquiryStatus,user=Depends(get_user)):
 extra_summary,smart_insights,branch_for,stock_at,adjust_branch,consume_lots = __import__('v5_features').install(app)
 __import__('supplier_ledger').install(app)
 __import__('history_notifications').install(app)
+__import__('catalog_contacts').install(app)
 
 @app.get('/api/health')
 def health():
