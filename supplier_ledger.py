@@ -13,7 +13,7 @@ def install(app):
       id TEXT PRIMARY KEY, store_id TEXT NOT NULL REFERENCES stores(id),
       name TEXT NOT NULL, phone TEXT DEFAULT '', address TEXT DEFAULT '',
       created_at TEXT NOT NULL, UNIQUE(store_id,name));
-    CREATE TABLE IF NOT EXISTS supplier_purchases(
+    CREATE TABLE IF NOT EXISTS company_purchase_lines(
       id TEXT PRIMARY KEY, store_id TEXT NOT NULL REFERENCES stores(id),
       company_id TEXT NOT NULL REFERENCES supplier_companies(id),
       bill_id TEXT NOT NULL REFERENCES supplier_bills(id),
@@ -21,7 +21,7 @@ def install(app):
       branch_id TEXT NOT NULL REFERENCES branches(id),
       quantity REAL NOT NULL, unit_cost REAL NOT NULL,
       total REAL NOT NULL, created_at TEXT NOT NULL, created_by TEXT NOT NULL);
-    CREATE INDEX IF NOT EXISTS supplier_purchases_company ON supplier_purchases(store_id,company_id,created_at);
+    CREATE INDEX IF NOT EXISTS company_purchase_lines_company ON company_purchase_lines(store_id,company_id,created_at);
     """
     with connection() as db:
         db.executescript(schema)
@@ -53,7 +53,7 @@ def install(app):
     def company_snapshot(db,sid):
         companies = allrows(db, 'SELECT * FROM supplier_companies WHERE store_id=? ORDER BY name', (sid,))
         bills = allrows(db, 'SELECT * FROM supplier_bills WHERE store_id=? ORDER BY created_at DESC', (sid,))
-        purchases = allrows(db, 'SELECT p.*,pr.name AS product_name FROM supplier_purchases p JOIN products pr ON pr.id=p.product_id WHERE p.store_id=? ORDER BY p.created_at DESC LIMIT 1000', (sid,))
+        purchases = allrows(db, 'SELECT p.*,pr.name AS product_name FROM company_purchase_lines p JOIN products pr ON pr.id=p.product_id WHERE p.store_id=? ORDER BY p.created_at DESC LIMIT 1000', (sid,))
         payments = allrows(db, 'SELECT * FROM supplier_payments WHERE store_id=? ORDER BY created_at DESC LIMIT 1000', (sid,))
         for c in companies:
             own = [b for b in bills if b['supplier']==c['name']]
@@ -121,7 +121,7 @@ def install(app):
                 db.execute('UPDATE products SET stock=stock+?,cost=? WHERE id=? AND store_id=?',
                     (line.qty,avg,product['id'],shop['id']))
                 adjust_branch(db,shop['id'],branch['id'],product['id'],line.qty)
-                db.execute('INSERT INTO supplier_purchases VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+                db.execute('INSERT INTO company_purchase_lines VALUES(?,?,?,?,?,?,?,?,?,?,?)',
                     (uid(),shop['id'],company['id'],bill_id,product['id'],branch['id'],
                      line.qty,cost,round(line.qty*cost,2),timestamp,user['id']))
                 db.execute('INSERT INTO movements(id,store_id,product_id,delta,reason,note,created_at,user_id,branch_id) VALUES(?,?,?,?,?,?,?,?,?)',
