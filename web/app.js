@@ -51,7 +51,7 @@ try{previousSession=null}catch{}
 localStorage.removeItem('donchi-clean-session'); // migrate old bearer credential only once
 function rememberUser(user){try{localStorage.setItem('donchi-clean-last-user',JSON.stringify(user))}catch(e){console.warn('Remembering user unavailable',e)}}
 function previousUser(){try{return JSON.parse(localStorage.getItem('donchi-clean-last-user')||'null')}catch{return null}}
-const state={branchId:localStorage.getItem('donchi-clean-branch')||null,data:null,stores:[],role:null,view:'dashboard',storeId:localStorage.getItem('donchi-clean-shop'),online:navigator.onLine,usingCache:false,cart:{},cartPrices:{},companies:[],ledger:null,dayOverview:null,payMode:'cash',posCustomer:'',query:'',theme:localStorage.getItem('donchi-clean-theme')||'light',modal:null,modalData:null,logoDraft:'',mobileNav:false,pending:[],syncing:false,lastReceipt:null};
+const state={branchId:localStorage.getItem('donchi-clean-branch')||null,data:null,stores:[],role:null,view:'dashboard',storeId:localStorage.getItem('donchi-clean-shop'),online:navigator.onLine,usingCache:false,cart:{},cartPrices:{},companies:[],ledger:null,dayOverview:null,notifications:[],notificationUnread:0,salesHistory:[],salesHistoryTotal:0,salesHistoryOffset:0,payMode:'cash',posCustomer:'',query:'',theme:localStorage.getItem('donchi-clean-theme')||'light',modal:null,modalData:null,logoDraft:'',mobileNav:false,pending:[],syncing:false,lastReceipt:null};
 document.documentElement.dataset.theme=state.theme;
 // The selected shop/branch is browser-local, but the authenticated account is
 // authoritative. Never carry another account's selection into the next login.
@@ -103,6 +103,7 @@ async function load(){
     }
     state.data=result.data;state.stores=result.stores||[];
     if(can('owner','manager')){try{state.dayOverview=await request('/v6/today')}catch(e){console.warn('Daily overview unavailable',e)}}
+    if(can('owner','manager')){try{await refreshNotifications()}catch(e){console.warn('Notifications unavailable',e)}}
     state.branchId=result.data?.branch_id||null;
     if(state.branchId){try{localStorage.setItem('donchi-clean-branch',state.branchId)}catch(e){console.warn('Branch preference unavailable',e)}}
     state.storeId=menuRole()==='superadmin'?null:(session.user.store_id||state.data?.store?.id||null);
@@ -218,6 +219,8 @@ const menus=[
  ['crm','CRM va mijoz kartasi','users',['manager','owner'],'TAHLIL VA TIZIM'],
  ['finance','Moliya va ta’minotchilar','wallet',['manager','owner'],'TAHLIL VA TIZIM'],
  ['companies','Korxonalar va optom xarid','truck',['manager','owner'],'TAHLIL VA TIZIM'],
+ ['sales-history','Sotuvlar tarixi','receipt',['seller','manager','owner'],'TAHLIL VA TIZIM'],
+ ['notifications','Xabarnomalar','bell',['manager','owner'],'TAHLIL VA TIZIM'],
  ['insights','Aqlli tahlilchi','chart',['manager','owner'],'TAHLIL VA TIZIM'],
  ['telegram','Telegram hisobotlari','megaphone',['owner'],'TAHLIL VA TIZIM'],
  ['updates','DONCHI yangiliklari','receipt',['seller','warehouse','manager','owner'],'TAHLIL VA TIZIM'],
@@ -228,7 +231,7 @@ const menus=[
  ['sync','Sinxronlash','refresh',['warehouse','seller','manager','owner'],'TAHLIL VA TIZIM']
 ];
 function canMenu(m){const key={debts:'debts',returns:'returns',analytics:'analytics',deliveries:'delivery',finance:'finance',companies:'finance',crm:'crm',branches:'branches',telegram:'telegram',insights:'insights'}[m[0]];return can(...m[3])&&(!key||state.data?.features?.[key]!==false)}
-function navItems(){let last='';return menus.filter(canMenu).map(m=>{const section=m[4]!==last?`<div class="nav-section">${m[4]}</div>`:'';last=m[4];return section+`<button class="navlink ${state.view===m[0]?'active':''}" data-a="nav" data-v="${m[0]}">${ico(m[2])}<span>${m[1]}</span>${m[0]==='sync'&&visibleOutbox().length?badge(visibleOutbox().length,'warning'):''}</button>`}).join('')}
+function navItems(){let last='';return menus.filter(canMenu).map(m=>{const section=m[4]!==last?`<div class="nav-section">${m[4]}</div>`:'';last=m[4];return section+`<button class="navlink ${state.view===m[0]?'active':''}" data-a="nav" data-v="${m[0]}">${ico(m[2])}<span>${m[1]}</span>${m[0]==='notifications'&&state.notificationUnread?badge(state.notificationUnread,'warning'):m[0]==='sync'&&visibleOutbox().length?badge(visibleOutbox().length,'warning'):''}</button>`}).join('')}
 function head(title,subtitle,actions=''){return `<div class="page-head"><div><p class="eyebrow">DONCHI • BUSINESS SUITE</p><h1>${title}</h1><p class="subtitle">${subtitle}</p></div><div class="actions">${actions}</div></div>`}
 function btn(icon,text,a,cls=''){return `<button class="btn ${cls}" data-a="${a}">${ico(icon,16)} ${text}</button>`}
 function stat(label,value,sub,icon='chart',color=''){return `<div class="stat"><div class="stat-top"><span class="slabel">${label}</span><span class="stat-icon ${color}">${ico(icon)}</span></div><div class="svalue">${value}</div><small>${sub}</small></div>`}
@@ -241,7 +244,7 @@ function renderLogin(){return `<div class="login-wrap"><div class="login-left"><
 function shell(page){const u=session.user,s=(menuRole()==='superadmin'&&window.platformAdmin?.data?.brand?{name:window.platformAdmin.data.brand.brand_name,logo:window.platformAdmin.data.brand.logo}:state.data?.store)||{},pending=visibleOutbox();return `<div class="mobile-shade ${state.mobileNav?'open':''}" data-a="mobile-close"></div><div class="layout"><aside class="sidebar ${state.mobileNav?'open':''}"><div class="sidebar-logo"><span class="brand-mark brand-icon"><img src="/icon.svg" alt="" /></span><div><div class="brand-text">DON<span>CHI</span> <span style="font-size:10px;background:#1c655e;padding:3px 5px;border-radius:5px;color:#d9f8ed">2.0</span></div><div class="brand-sub">ENTERPRISE MANAGEMENT</div></div></div><div class="sidebar-store"><span class="store-icon">${s.logo?`<img src="${esc(s.logo)}" style="width:31px;height:31px;object-fit:contain;border-radius:8px"/>`:ico('store',20)}</span><div style="min-width:0"><div class="store-title">${esc(s.name||'DONCHI platforma')}</div><div class="store-sub">${esc(u.role)} · ${state.online?'Online':'Offline'}</div></div></div><nav class="sidebar-nav">${navItems()}</nav><div class="sidebar-foot"><div class="side-help"><strong>${ico('refresh',15)} Sinxronlash nazorati</strong>${pending.length?`${pending.length} ta amalga navbat bor`:state.online?'Ma’lumotlar server bilan ulangan':'Offline savdolar navbatda saqlanadi'}</div>DONCHI v2.0 • ${state.usingCache?'Offline snapshot':'Online server'}</div></aside><div class="main"><header class="topbar"><button class="icon-btn mobile-toggle" data-a="mobile-toggle" aria-label="Menyu">${ico('menu')}</button><div class="breadcrumbs">DONCHI <span style="margin:0 8px;color:var(--stroke)">›</span> <strong>${menus.find(m=>m[0]===state.view)?.[1]||'Boshqaruv'}</strong></div><div class="rightbar">${menuRole()==='superadmin'?'<a class="donchi-settings-link" href="/platform/settings.html" aria-label="Super Admin sozlamalari">'+ico('gear',17)+' <span>Sozlamalar</span></a>':''}${window.DONCHI_PWA?.button(true)||''}${menuRole()!=='superadmin'&&state.stores.length>1?`<select class="storeselect" id="store-select" aria-label="Do‘konni tanlang">${opts(state.stores.filter(x=>x.status==='active').map(x=>[x.id,x.name]),state.storeId)}</select>`:''}${menuRole()!=='superadmin'&&(state.data?.branches||[]).length>1?`<select class="storeselect" id="branch-select" aria-label="Filialni tanlang">${opts(state.data.branches.map(b=>[b.id,b.name]),state.branchId)}</select>`:''}<span class="online ${state.online?'':'offline'}"><span class="dot"></span>${state.online?'Online':'Offline'}${pending.length?` · ${pending.length}`:''}</span><button class="icon-btn" data-a="theme" aria-label="Tungi yoki kunduzgi rejim">${ico(state.theme==='light'?'moon':'sun',18)}</button><button class="icon-btn" data-a="sync-now" title="Sinxronlash">${ico('refresh',18)}</button><div class="userbadge"><span class="avatar">${esc(u.full_name.slice(0,2).toUpperCase())}</span><div><b>${esc(u.full_name)}</b><span>${esc(u.role)}</span></div></div><button class="icon-btn" data-a="logout" title="Chiqish">${ico('logout',17)}</button></div></header><main class="content">${state.usingCache?`<div class="alert mb">${ico('alert',16)} Offline nusxa ko‘rsatilmoqda. Savdolar qurilmada navbatga yoziladi; serverga yuborish uchun internet va ushbu hisob kerak.</div>`:''}${page}</main></div></div>`}
 function render(){const app=$('#app');if(!session){app.innerHTML=renderLogin();$('#modal-root').innerHTML='';return}
   if(!hasData()&&menuRole()!=='superadmin'){app.innerHTML=shell(`<div class="panel panelpad">${empty('Do‘kon ma’lumotlari yuklanmadi','Internet ulanishini tekshiring yoki oldin online ishlatilgan do‘konni tanlang')}<div style="text-align:center;margin-top:14px">${btn('refresh','Qayta urinish','load','secondary')}</div></div>`);return}
-  const pages={platform,inquiries,'platform-settings':window.platformSettingsPage,dashboard,pos,shifts,returns:returnsPage,products,inventory,debts,customers,companies:companyPage,analytics,team,settings,sync,...v5Pages()};const view=pages[state.view]&&canMenu(menus.find(m=>m[0]===state.view))?state.view:(menuRole()==='superadmin'?'platform':menuRole()==='seller'?'pos':menuRole()==='warehouse'?'inventory':'dashboard');app.innerHTML=shell(pages[view]());renderModal();
+  const pages={platform,inquiries,'platform-settings':window.platformSettingsPage,dashboard,pos,shifts,returns:returnsPage,products,inventory,debts,customers,companies:companyPage,'sales-history':salesHistoryPage,notifications:notificationsPage,analytics,team,settings,sync,...v5Pages()};const view=pages[state.view]&&canMenu(menus.find(m=>m[0]===state.view))?state.view:(menuRole()==='superadmin'?'platform':menuRole()==='seller'?'pos':menuRole()==='warehouse'?'inventory':'dashboard');app.innerHTML=shell(pages[view]());renderModal();
 }
 function dailyPoints(){const s=state.data.sales||[];return Array.from({length:7},(_,i)=>{const d=new Date();d.setDate(d.getDate()-(6-i));const key=d.toDateString();return {label:String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0'),value:s.filter(x=>new Date(x.created_at).toDateString()===key).reduce((a,b)=>a+b.subtotal,0)}})}
 function lineChart(points){const w=740,h=230,p=28,max=Math.max(1,...points.map(x=>x.value)),coords=points.map((x,i)=>[p+i*(w-2*p)/(points.length-1),h-p-x.value/max*(h-2*p)]),path=coords.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' '),area=path+` L${w-p} ${h-p} L${p} ${h-p}Z`;
@@ -250,7 +253,7 @@ function salesTable(items,limit=8){return table(['SAVDO','MIJOZ','SUMMA','TO‘L
 function dashboard(){const d=state.data,stats=d.stats||{},low=d.products.filter(x=>x.stock<=x.min_stock).sort((a,b)=>a.stock-b.stock),pays=d.balances.filter(x=>x.balance>0),sales=d.sales||[];
   return head('Xush kelibsiz! 👋',`${esc(d.store.name)} do‘koni — bugungi biznes ko‘rsatkichlari`,btn('plus','Yangi savdo','go-pos')+ (can('owner','manager')?btn('cube','Mahsulot qo‘shish','new-product','secondary'):''))+
   `<div class="stats-grid">${stat('Bugungi savdo',som(stats.today||0),'Bugungi tushum emas, jami sotuv', 'wallet')}${stat('Bugungi foyda',som(stats.today_profit||0),'Xarajat va qaytarishlardan keyin', 'trend','blue')}${stat('Umumiy savdo',som(stats.revenue||0),`${stats.sale_count||0} ta savdo yozuvi`,'trend','blue')}${stat('Ombor tannarxi',som(stats.stock_value||0),`${d.products.length} turdagi mahsulot`,'cube','orange')}${stat('Qolgan nasiya',som(stats.debt||0),`${pays.length} ta qarzdor mijoz`,'wallet','red')}</div>`+
-  `<div class="panel mt"><div class="panel-head"><div><h3>${ico('alert',18)} Bugungi xabarnomalar</h3></div></div><div class="panel-body"><div class="listrow"><b>Bugungi foyda</b><span class="rowgrow"></span><strong>${som(stats.today_profit||0)}</strong></div><div class="listrow"><b>Korxonalar oldidagi qarz</b><span class="rowgrow"></span><strong>${som(state.dayOverview?.supplier_debt||0)}</strong></div><button class="btn sm secondary" data-a="go-companies">Korxonalarni ko‘rish</button></div></div>`+
+  `<div class="panel mt"><div class="panel-head"><div><h3>${ico('alert',18)} Bugungi xabarnomalar</h3></div><button class="link" data-a="nav" data-v="notifications">Barcha xabarlar (${state.notificationUnread}) →</button></div><div class="panel-body"><div class="listrow"><b>Bugungi foyda</b><span class="rowgrow"></span><strong>${som(stats.today_profit||0)}</strong></div><div class="listrow"><b>Korxonalar oldidagi qarz</b><span class="rowgrow"></span><strong>${som(state.dayOverview?.supplier_debt||0)}</strong></div><button class="btn sm secondary" data-a="go-companies">Korxonalarni ko‘rish</button></div></div>`+
   `<div class="grid-2"><div class="panel"><div class="panel-head"><div><h3>Daromad dinamikasi</h3><p>Oxirgi 7 kunlik savdolar grafigi</p></div>${badge('7 kunlik')}</div><div class="panel-body">${lineChart(dailyPoints())}<div class="legend"><span class="dot"></span> Savdo hajmi (so‘m)</div></div></div><div class="panel"><div class="panel-head"><div><h3>Ombor ogohlantirishlari</h3><p>Kam qolgan mahsulotlar</p></div><button class="link" data-a="nav" data-v="inventory">Hammasi →</button></div><div class="panel-body">${low.length?low.slice(0,6).map(p=>`<div class="listrow"><div class="list-icon">${ico('cube')}</div><div class="rowgrow"><b>${esc(p.name)}</b><small>Minimal: ${fmt(p.min_stock)} ${esc(p.unit)}</small></div>${badge(fmt(p.stock)+' '+p.unit,'warning')}</div>`).join(''):empty('Ombor me’yorda','Kam qolgan mahsulot yo‘q')}</div></div></div>`+
   `<div class="grid-2 mt"><div class="panel"><div class="panel-head"><div><h3>So‘nggi savdolar</h3><p>Oxirgi operatsiyalar</p></div><button class="link" data-a="nav" data-v="analytics">Hisobot →</button></div>${salesTable(sales,5)}</div><div class="panel"><div class="panel-head"><div><h3>Tezkor amallar</h3><p>Ishni bir bosishda boshlang</p></div></div><div class="panel-body">${[['cart','Yangi savdo','POS orqali savdo qilish','pos'],['truck','Omborga kirim','Yangi tovar qabul qilish','inventory'],['wallet','Qarzdorlar','Nasiya daftarini ochish','debts'],['chart','Hisobotlar','Tushum va foydani ko‘rish','analytics']].filter(x=>can(...menus.find(m=>m[0]===x[3])[3])).map(x=>`<button class="listrow" style="width:100%;text-align:left;background:none;border-left:0;border-right:0;border-top:0;color:var(--text)" data-a="nav" data-v="${x[3]}"><span class="list-icon">${ico(x[0])}</span><span class="rowgrow"><b>${x[1]}</b><small>${x[2]}</small></span>${ico('arrow',16)}</button>`).join('')}</div></div></div>`}
 function inquiries(){const rows=state.data?.inquiries||[];
@@ -282,6 +285,51 @@ async function showCustomerLedger(id){
   const r=await request('/v6/customers/'+encodeURIComponent(id)+'/ledger');
   state.ledger=r;openModal('customer-ledger',id);
 }
+
+async function refreshNotifications(){
+ const r=await request('/v7/notifications');state.notifications=r.items||[];state.notificationUnread=r.unread||0;
+}
+async function refreshSalesHistory(reset=false){
+ if(reset){state.salesHistoryOffset=0;state.salesHistory=[]}
+ const r=await request('/v7/sales?limit=100&offset='+state.salesHistoryOffset);
+ state.salesHistory=[...state.salesHistory,...(r.items||[])];
+ state.salesHistoryOffset=state.salesHistory.length;
+ state.salesHistoryTotal=r.total||0;
+}
+function notificationsPage(){
+ const list=state.notifications||[];
+ return head('Xabarnomalar va 21:00 hisobotlar','Toshkent vaqti bilan 21:00 da saqlanadi. O‘qildi bosilmasa o‘qilmagan holda qoladi.',btn('refresh','Yangilash','notifications-refresh','secondary'))+
+ '<div class="stats-grid">'+stat('O‘qilmagan',state.notificationUnread,'O‘qildi bosilmagan hisobotlar','bell','orange')+
+ stat('Tarix',list.length,'Saqlangan xabarnomalar','receipt')+'</div>'+
+ list.map(n=>{const x=n.report||{};return '<div class="panel mt"><div class="panel-head"><div><h3>'+esc(n.title)+'</h3><p>'+dt(n.created_at)+'</p></div>'+
+ (n.read_at?badge('O‘qilgan','blue'):'<button class="btn sm" data-a="notification-read" data-id="'+esc(n.id)+'">O‘qildi</button>')+'</div>'+
+ '<div class="panel-body"><div class="stats-grid">'+
+ stat('Savdo ('+(x.sales_count||0)+')',som(x.sales_total||0),'Kunlik savdo','chart')+
+ stat('Foyda',som(x.profit||0),'Sotuv tannarxi va xarajatdan keyin','trend','blue')+
+ stat('Naqd',som(x.cash||0),'POS to‘lovlari','wallet')+
+ stat('Karta',som(x.card||0),'POS to‘lovlari','wallet','blue')+
+ stat('Yangi nasiya',som(x.new_credit||0),'Qarzga sotildi','wallet','orange')+
+ stat('Mijoz to‘lovi',som(x.customer_repayments||0),'Qarz qaytishi','check')+
+ stat('Korxonadan olindi',som(x.supplier_purchases||0),'Optom mahsulot','truck')+
+ stat('Korxonaga to‘landi',som(x.supplier_payments||0),'Qarz to‘lovi','check')+
+ stat('Korxonalar qarzi',som(x.supplier_debt||0),'Jami qolgan qarz','wallet','red')+
+ stat('Mijozlar qarzi',som(x.customer_debt||0),'Jami olinadigan','users','orange')+
+ stat('Xarajat',som(x.expenses||0),'Bugungi xarajat','wallet')+
+ stat('Qaytarilgan',som(x.returns||0),'Savdo qaytishi','refresh')+
+ '</div></div></div>'}).join('')+(list.length?'':empty('21:00 hisoboti hali yo‘q','Hisobot 21:00 dan keyin paydo bo‘ladi va tarixda saqlanadi'));
+}
+function salesHistoryPage(){
+ const list=state.salesHistory||[];
+ return head('Barcha sotuvlar tarixi','Naqd, karta, nasiya, aralash to‘lov va har bir mahsulot ro‘yxati',btn('refresh','Yangilash','sales-history-refresh','secondary'))+
+ '<div class="stats-grid">'+stat('Ko‘rsatilgan',list.length,'Jami: '+state.salesHistoryTotal,'receipt')+
+ stat('Naqd',som(list.reduce((a,s)=>a+num(s.cash_paid),0)),'Ko‘rsatilgan savdolar','wallet')+
+ stat('Karta',som(list.reduce((a,s)=>a+num(s.card_paid),0)),'Ko‘rsatilgan savdolar','wallet','blue')+
+ stat('Nasiya',som(list.reduce((a,s)=>a+num(s.debt),0)),'Ko‘rsatilgan savdolar','wallet','orange')+'</div>'+
+ list.map(s=>'<div class="panel mt"><div class="panel-head"><div><h3>#'+esc(s.id.slice(0,8).toUpperCase())+' — '+som(s.subtotal)+'</h3><p>'+dt(s.created_at)+' · '+esc(s.customer_name||'Oddiy mijoz')+' · Kassir: '+esc(s.cashier_name||'—')+'</p></div>'+badge(s.payment_label||s.method,'blue')+'</div>'+
+ table(['MAHSULOT','MIQDOR','DONASI','JAMI'],(s.lines||[]).map(l=>'<tr><td>'+esc(l.name)+'</td><td>'+fmt(l.qty)+' '+esc(l.unit)+'</td><td>'+som(l.price)+'</td><td>'+som(num(l.qty)*num(l.price))+'</td></tr>'))+
+ '<div class="panel-body">Naqd: <b>'+som(s.cash_paid)+'</b> · Karta: <b>'+som(s.card_paid)+'</b> · Nasiya: <b>'+som(s.debt)+'</b></div></div>').join('')+
+ (list.length<state.salesHistoryTotal?'<div class="mt"><button class="btn secondary" data-a="sales-history-more">Yana 100 ta yuklash</button></div>':'');
+}
 function companyPage(){
   const cs=state.companies||[];
   return head('Korxonalar va optom xarid','Ta’minotchilar, mahsulot kirimi, qarz va to‘lovlar',
@@ -295,10 +343,10 @@ function companyPage(){
     table(['KORXONA','JAMI OLINGAN','TO‘LANGAN','QARZ','AMALLAR'],cs.map(c=>
       '<tr><td><b>'+esc(c.name)+'</b><small>'+esc(c.phone||'')+'</small></td>'+
       '<td>'+som(c.total)+'</td><td>'+som(c.paid)+'</td><td><b>'+som(c.debt)+'</b></td>'+
-      '<td><button class="btn sm secondary" data-a="company-pay" data-id="'+esc(c.id)+'" '+(num(c.debt)<=0?'disabled':'')+'>Qarz to‘lash</button></td></tr>'
+      '<td><button class="btn sm secondary" data-a="company-pay" data-id="'+esc(c.id)+'" '+(num(c.debt)<=0?'disabled':'')+'>Qarz to‘lash</button> <button class="btn sm secondary" data-a="company-detail" data-id="'+esc(c.id)+'">To‘liq tarix</button></td></tr>'
     ))+'</div>'+
     cs.map(c=>'<div class="panel mt"><div class="panel-head"><div><h3>'+esc(c.name)+'</h3><p>Qarz: '+som(c.debt)+' · To‘langan: '+som(c.paid)+'</p></div></div>'+
-    table(['SANA','MAHSULOT','MIQDOR','OLINGAN NARX','JAMI'],(c.purchases||[]).slice(0,40).map(p=>'<tr><td>'+dt(p.created_at)+'</td><td>'+esc(p.product_name)+'</td><td>'+fmt(p.quantity)+'</td><td>'+som(p.unit_cost)+'</td><td>'+som(p.total)+'</td></tr>'))+
+    table(['SANA','MAHSULOT','MIQDOR','OLINGAN NARX','JAMI','NAKLADNOY','QARZ HOLATI'],(c.purchases||[]).slice(0,40).map(p=>'<tr><td>'+dt(p.created_at)+'</td><td>'+esc(p.product_name)+'</td><td>'+fmt(p.quantity)+' '+esc(state.data?.products?.find(x=>x.id===p.product_id)?.unit||'')+'</td><td>'+som(p.unit_cost)+'</td><td>'+som(p.total)+'</td><td>'+esc(p.reference||'—')+'</td><td>'+(num(p.bill_debt)>0?badge('Qarz: '+som(p.bill_debt),'warning'):badge('To‘langan'))+'</td></tr>'))+
     '<div class="panel-head"><h3>To‘lovlar tarixi</h3></div>'+
     table(['SANA','TO‘LANGAN SUMMA'],(c.payments||[]).slice(0,30).map(p=>'<tr><td>'+dt(p.created_at)+'</td><td>'+som(p.amount)+'</td></tr>'))+'</div>').join('');
 }
@@ -345,10 +393,17 @@ function renderModal(){if(!state.modal){$('#modal-root').innerHTML='';return} if
  case 'pay-company':{const c=state.companies.find(x=>x.id===record);if(!c)return;
    title=c.name+' — qarz to‘lovi';body=modalForm('<p>Qolgan qarz: <b>'+som(c.debt)+'</b></p>'+
    formField('amount','To‘lov miqdori','number',c.debt,{min:0.01,step:'any',required:true}),'To‘lovni saqlash');break}
+ case 'company-detail':{const c=state.companies.find(x=>x.id===record);if(!c)return;title=c.name+' — xarid va to‘lov tarixi';
+   body='<p>Jami: <b>'+som(c.total)+'</b> · To‘langan: <b>'+som(c.paid)+'</b> · Qarz: <b>'+som(c.debt)+'</b></p>'+
+   '<h3>Nakladnoylar va to‘lov holati</h3>'+
+   table(['SANA','HUJJAT','JAMI','TO‘LANGAN','QARZ','MUDDAT'],(c.bills||[]).map(b=>'<tr><td>'+dt(b.created_at)+'</td><td>'+esc(b.reference||'—')+'</td><td>'+som(b.amount)+'</td><td>'+som(b.paid)+'</td><td>'+(num(b.amount)-num(b.paid)>0?badge(som(num(b.amount)-num(b.paid)),'warning'):badge('To‘langan'))+'</td><td>'+esc(b.due_on||'—')+'</td></tr>'))+
+   '<h3>Qaysi mahsulotlar olingan</h3>'+
+   table(['SANA','MAHSULOT','MIQDOR','DONASI','JAMI'],(c.purchases||[]).map(p=>'<tr><td>'+dt(p.created_at)+'</td><td>'+esc(p.product_name)+'</td><td>'+fmt(p.quantity)+' '+esc(state.data?.products?.find(x=>x.id===p.product_id)?.unit||'')+'</td><td>'+som(p.unit_cost)+'</td><td>'+som(p.total)+'</td></tr>'))+
+   '<h3>Barcha to‘lovlar</h3>'+table(['SANA','SUMMA','HUJJAT'],(c.payments||[]).map(p=>'<tr><td>'+dt(p.created_at)+'</td><td>'+som(p.amount)+'</td><td>'+esc((c.bills||[]).find(b=>b.id===p.bill_id)?.reference||'—')+'</td></tr>'));wide=true;break}
  case 'customer-ledger':{const l=state.ledger;if(!l)return;title=l.customer.name+' — qarz daftari';
    body='<p>Qolgan qarz: <b>'+som(l.balance)+'</b></p>'+
    table(['SANA','AMALIYOT','SUMMA','KEYINGI QARZ'],l.entries.map(e=>
-   '<tr><td>'+dt(e.created_at)+'</td><td>'+esc(e.kind==='debt'?'Qarzga olindi':e.kind==='payment'?'To‘lov qilindi':'Qaytarish')+'</td><td>'+som(e.amount)+'</td><td>'+som(e.balance_after)+'</td></tr>'));
+   '<tr><td>'+dt(e.created_at)+'</td><td>'+esc(e.kind==='debt'?'Qarzga olindi':e.kind==='payment'?'To‘lov qilindi':'Qaytarish')+(e.items?.length?'<small>'+e.items.map(i=>esc(i.name)+' × '+fmt(i.qty)+' = '+som(i.qty*i.price)).join(', ')+'</small>':'')+'</td><td>'+som(e.amount)+'</td><td>'+som(e.balance_after)+'</td></tr>'));
    wide=true;break}
  case 'new-customer':title='Yangi mijoz yoki do‘kon';body=modalForm(`${selField('customer_type','Mijoz turi',[['person','Jismoniy shaxs'],['shop','Do‘kon']],'person')}${formField('name','Ism-familiya','text','',{required:true})}${formField('phone','Telefon raqami','tel','','')}${formField('address','Manzil','text','','')}`,'Mijoz qo‘shish');break;
  case 'new-payment':{
@@ -444,7 +499,10 @@ async function doAction(el){const a=el.dataset.a,mid=el.dataset.id;
   if(await v5Action(el,a,mid))return;
   if(a==='mobile-toggle'||a==='mobile-close'){state.mobileNav=a==='mobile-toggle'?!state.mobileNav:false;render();return}
   if(a.startsWith('pa-')){await window.platformSettingsAction(el);return}
-  if(a==='nav'){state.view=el.dataset.v;state.query='';state.mobileNav=false;if(state.view==='companies')await refreshCompanies();render();if(state.view==='platform-settings')await window.platformSettingsLoad();window.scrollTo({top:0,behavior:'smooth'});return}
+  if(a==='nav'){state.view=el.dataset.v;state.query='';state.mobileNav=false;if(state.view==='companies')await refreshCompanies();
+    if(state.view==='notifications')await refreshNotifications();
+    if(state.view==='sales-history')await refreshSalesHistory(true);
+    render();if(state.view==='platform-settings')await window.platformSettingsLoad();window.scrollTo({top:0,behavior:'smooth'});return}
   if(a==='theme'){state.theme=state.theme==='light'?'dark':'light';localStorage.setItem('donchi-clean-theme',state.theme);document.documentElement.dataset.theme=state.theme;render();return}
   if(a==='logout'){await signOut();return}
   if(a==='close-modal'||a==='modal-overlay'){closeModal();return}
@@ -461,6 +519,11 @@ async function doAction(el){const a=el.dataset.a,mid=el.dataset.id;
   if(a==='edit-product'){openModal(a,mid);return}
   if(a==='pay-client'){openModal('new-payment',mid);return}
   if(a==='company-pay'){openModal('pay-company',mid);return}
+  if(a==='company-detail'){openModal('company-detail',mid);return}
+  if(a==='notification-read'){await request('/v7/notifications/'+encodeURIComponent(mid)+'/read',{method:'POST',body:{}});await refreshNotifications();render();return}
+  if(a==='notifications-refresh'){await refreshNotifications();render();return}
+  if(a==='sales-history-refresh'){await refreshSalesHistory(true);render();return}
+  if(a==='sales-history-more'){await refreshSalesHistory();render();return}
   if(a==='customer-ledger'){await showCustomerLedger(mid);return}
   if(a==='company-refresh'){await refreshCompanies();render();return}
   if(a==='purchase-line-add'){document.querySelector('#purchase-lines')?.insertAdjacentHTML('beforeend',purchaseLineHtml());return}
