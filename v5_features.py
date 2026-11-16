@@ -34,7 +34,8 @@ def install(app):
             'movements':{'branch_id':'TEXT REFERENCES branches(id)'},
             'users':{'session_version':'INTEGER NOT NULL DEFAULT 0'}
         }.items():
-            existing={row[1] for row in db.execute(f'PRAGMA table_info({table})')}
+            existing=({col for col in defs if db.has_column(table,col)} if hasattr(db,'has_column')
+                      else {row[1] for row in db.execute(f'PRAGMA table_info({table})')})
             for col,decl in defs.items():
                 if col not in existing: db.execute(f'ALTER TABLE {table} ADD COLUMN {col} {decl}')
     with connection(write=True) as db:
