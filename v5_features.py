@@ -71,7 +71,7 @@ def install(app):
         exists=onerow(db,'SELECT qty FROM branch_stock WHERE store_id=? AND branch_id=? AND product_id=?',(sid,branch_id,pid))
         current=exists['qty'] if exists else 0.
         if current+delta < -0.000001:http(409,'Tanlangan filialda mahsulot yetarli emas')
-        db.execute('INSERT INTO branch_stock(store_id,branch_id,product_id,qty) VALUES(?,?,?,?) ON CONFLICT(branch_id,product_id) DO UPDATE SET qty=qty+excluded.qty',(sid,branch_id,pid,delta))
+        db.execute('INSERT INTO branch_stock(store_id,branch_id,product_id,qty) VALUES(?,?,?,?) ON CONFLICT(branch_id,product_id) DO UPDATE SET qty=branch_stock.qty+excluded.qty',(sid,branch_id,pid,delta))
 
     # Preserve lot metadata as stock is transferred. Legacy unbatched stock can be moved too.
     def transfer_lots(db,sid,source,target,pid,qty):
