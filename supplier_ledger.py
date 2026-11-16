@@ -167,7 +167,7 @@ def install(app):
             pays=allrows(db,'SELECT id,created_at,amount,method FROM debt_payments WHERE store_id=? AND customer_id=?',(shop['id'],customer_id))
             returns=allrows(db,'SELECT id,created_at,credit_reduction AS amount FROM sale_returns WHERE store_id=? AND customer_id=? AND credit_reduction>0',(shop['id'],customer_id))
             timeline=[dict(x,kind='debt') for x in sales]+[dict(x,kind='payment') for x in pays]+[dict(x,kind='return') for x in returns]
-            timeline.sort(key=lambda x:(x['created_at'],x['id']))
+            timeline.sort(key=lambda x:(x['created_at'], {'debt':0,'return':1,'payment':2}[x['kind']],x['id']))
             balance=0
             for e in timeline:
                 balance=round(balance+(e['amount'] if e['kind']=='debt' else -e['amount']),2)
