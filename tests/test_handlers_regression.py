@@ -176,7 +176,7 @@ class HandlersRegression(unittest.TestCase):
         }
         self.ok(alpha.post("/api/sales", json=sale), 409)  # cannot oversell
         sale["lines"][0]["qty"] = 1
-        sale["cash_paid"] = 100
+        sale["cash_paid"] = 120
         first = self.ok(alpha.post("/api/sales", json=sale))
         second = self.ok(alpha.post("/api/sales", json=sale))
         self.assertEqual(first["id"], second["id"])
