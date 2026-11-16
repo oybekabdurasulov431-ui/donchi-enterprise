@@ -240,7 +240,7 @@ class Login(BaseModel): username:str; password:str; totp:Optional[str]=None
 class ChangePassword(BaseModel): old_password:str; new_password:str; totp:Optional[str]=None
 class StoreCreate(BaseModel): name:str; username:str; owner_name:str; password:str; plan:str='Start'
 class ProductIn(BaseModel): name:str; sku:str; category:str=''; unit:str='qop'; price:float; cost:float=0; stock:float=0; min_stock:float=0
-class CustomerIn(BaseModel): id:Optional[str]=None; name:str; phone:str=''; address:str=''
+class CustomerIn(BaseModel): id:Optional[str]=None; name:str; phone:str=''; address:str=''; customer_type:str='person'
 class LineIn(BaseModel): product_id:str; qty:float; unit_price:Optional[float]=None
 class SaleIn(BaseModel): client_id:str; customer_id:Optional[str]=None; lines:list[LineIn]; cash_paid:float=0; card_paid:float=0
 class PayIn(BaseModel): client_id:str; customer_id:str; amount:float; method:str='cash'
@@ -620,9 +620,10 @@ def add_customer(payload:CustomerIn,request:Request,user=Depends(get_user)):
         cid=payload.id or uid()
         try: uuid.UUID(cid)
         except ValueError:http(422,'Mijoz ID noto‘g‘ri')
+        if payload.customer_type not in ('person','shop'):http(422,'Mijoz turi noto‘g‘ri')
         found=onerow(db,'SELECT id FROM customers WHERE id=? AND store_id=?',(cid,store['id']))
         if found:return {'ok':True,'id':cid,'duplicate':True}
-        try: db.execute('INSERT INTO customers(id,store_id,name,phone,address,created_at) VALUES(?,?,?,?,?,?)',(cid,store['id'],clean_name(payload.name),payload.phone[:60],payload.address[:180],now()))
+        try: db.execute('INSERT INTO customers(id,store_id,name,phone,address,created_at,customer_type) VALUES(?,?,?,?,?,?,?)',(cid,store['id'],clean_name(payload.name),payload.phone[:60],payload.address[:180],now(),payload.customer_type))
         except INTEGRITY_ERRORS: http(409,'Mijoz identifikatori band')
         audit(db,store['id'],user,'CUSTOMER_CREATED',{'id':cid,'name':payload.name})
     return {'ok':True,'id':cid}
