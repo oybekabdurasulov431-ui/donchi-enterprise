@@ -92,7 +92,7 @@ class HandlersRegression(unittest.TestCase):
         self.ok(owner.post("/api/shifts/open",json={"opening_cash":1000}))
         sale=self.ok(owner.post("/api/sales",json={
             "client_id":str(uuid.uuid4()),"customer_id":customer,
-            "lines":[{"product_id":product,"qty":2}],"cash_paid":100000,"card_paid":0
+            "lines":[{"product_id":product,"qty":2,"unit_price":90000}],"cash_paid":100000,"card_paid":0
         }))
         self.assertIn("id",sale)
         self.ok(owner.post("/api/debts/pay",json={"client_id":str(uuid.uuid4()),"customer_id":customer,"amount":50000,"method":"cash"}))
@@ -171,12 +171,12 @@ class HandlersRegression(unittest.TestCase):
         self.ok(alpha.post("/api/shifts/open", json={"opening_cash": 0}))
         client_id = str(uuid.uuid4())
         sale = {
-            "client_id": client_id, "lines": [{"product_id": pid, "qty": 2}],
+            "client_id": client_id, "lines": [{"product_id": pid, "qty": 2, "unit_price": 120}],
             "cash_paid": 200, "card_paid": 0
         }
         self.ok(alpha.post("/api/sales", json=sale), 409)  # cannot oversell
         sale["lines"][0]["qty"] = 1
-        sale["cash_paid"] = 100
+        sale["cash_paid"] = 120
         first = self.ok(alpha.post("/api/sales", json=sale))
         second = self.ok(alpha.post("/api/sales", json=sale))
         self.assertEqual(first["id"], second["id"])
@@ -332,7 +332,7 @@ class HandlersRegression(unittest.TestCase):
         }),403)
         self.ok(warehouse.post("/api/shifts/open",json={"opening_cash":0}),403)
         self.ok(warehouse.post("/api/sales",json={
-            "client_id":str(uuid.uuid4()),"lines":[{"product_id":product,"qty":1}],
+            "client_id":str(uuid.uuid4()),"lines":[{"product_id":product,"qty":1,"unit_price":90000}],
             "cash_paid":100
         }),403)
         self.ok(warehouse.post("/api/inventory/adjust",json={

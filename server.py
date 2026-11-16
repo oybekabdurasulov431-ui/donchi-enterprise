@@ -23,17 +23,39 @@ from fastapi import FastAPI, HTTPException, Request, Depends, Body
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from storage_safety import require_persistent_storage
 
 BASE = Path(__file__).resolve().parent
+DB_ENGINE = os.environ.get('DONCHI_DB_ENGINE', 'sqlite').strip().lower()
+if DB_ENGINE not in ('sqlite', 'postgres'):
+    raise RuntimeError('DONCHI_DB_ENGINE must be sqlite or postgres')
+if DB_ENGINE == 'postgres' and not os.environ.get('DATABASE_URL'):
+    raise RuntimeError('DATABASE_URL is required for PostgreSQL')
+if DB_ENGINE == 'postgres':
+    try:
+        import psycopg
+    except ImportError as exc:
+        raise RuntimeError('PostgreSQL support requires psycopg[binary]') from exc
+    INTEGRITY_ERRORS = (sqlite3.IntegrityError, psycopg.errors.UniqueViolation)
+else:
+    INTEGRITY_ERRORS = (sqlite3.IntegrityError,)
 DATA = Path(os.environ.get('DONCHI_DATA_DIR', os.environ.get('YEMPRO_DATA_DIR', BASE / 'data'))) # legacy key supported
-DATA.mkdir(parents=True, exist_ok=True)
+if DB_ENGINE == 'sqlite':
+    require_persistent_storage(DATA)
+    DATA.mkdir(parents=True, exist_ok=True)
 DB = DATA / 'yempro.sqlite3'
 SECRETFILE = DATA / '.secret'
-if not SECRETFILE.exists():
-    SECRETFILE.write_text(secrets.token_hex(48), encoding='utf-8')
-    try: os.chmod(SECRETFILE, 0o600)
-    except OSError: pass
-SECRET = SECRETFILE.read_text(encoding='utf-8').strip().encode()
+if DB_ENGINE == 'postgres':
+    raw_secret = os.environ.get('DONCHI_SESSION_SECRET', '')
+    if len(raw_secret) < 48:
+        raise RuntimeError('DONCHI_SESSION_SECRET (48+ chars) required in PostgreSQL mode')
+    SECRET = raw_secret.encode()
+else:
+    if not SECRETFILE.exists():
+        SECRETFILE.write_text(secrets.token_hex(48), encoding='utf-8')
+        try: os.chmod(SECRETFILE, 0o600)
+        except OSError: pass
+    SECRET = SECRETFILE.read_text(encoding='utf-8').strip().encode()
 TOKEN_TTL = 72 * 3600  # legacy API tokens, for old client compatibility
 COOKIE_NAME = "yempro_session"
 SESSION_TTL = 30 * 24 * 3600  # 30 days; renewed on each online application visit
@@ -46,6 +68,9 @@ def now(): return datetime.now(timezone.utc).isoformat(timespec='seconds')
 def http(status, detail): raise HTTPException(status_code=status, detail=detail)
 
 def sql_conn():
+    if DB_ENGINE == 'postgres':
+        from postgres_backend import PgConnection
+        return PgConnection(os.environ['DATABASE_URL'])
     con = sqlite3.connect(DB, timeout=20, isolation_level=None)
     con.row_factory = sqlite3.Row
     con.execute('PRAGMA foreign_keys=ON')
@@ -56,7 +81,7 @@ def sql_conn():
 def connection(write=False):
     db = sql_conn()
     try:
-        if write: db.execute('BEGIN IMMEDIATE')
+        if write: db.execute('BEGIN' if DB_ENGINE == 'postgres' else 'BEGIN IMMEDIATE')
         yield db
         if write: db.execute('COMMIT')
     except Exception:
@@ -192,12 +217,18 @@ CREATE INDEX IF NOT EXISTS returns_store_sale ON sale_returns(store_id,sale_id);
 
 def seed():
     with connection() as schema_db:
-        schema_db.execute('PRAGMA journal_mode=WAL')
+        if DB_ENGINE == 'sqlite': schema_db.execute('PRAGMA journal_mode=WAL')
         schema_db.executescript(SCHEMA)
+        # hosted_bootstrap.py writes this table after schema initialization.
+        # Pre-create it so full SQLite backups can be migrated into PostgreSQL
+        # before the first hosted bootstrap runs.
+        schema_db.execute('CREATE TABLE IF NOT EXISTS bootstrap_meta '
+                          '(key TEXT PRIMARY KEY, value TEXT NOT NULL)')
         # Safe additive migrations for existing YemPro 3.0 data.
         for table in ('sales','debt_payments'):
-            columns=[r[1] for r in schema_db.execute(f'PRAGMA table_info({table})')]
-            if 'shift_id' not in columns:
+            exists = schema_db.has_column(table, 'shift_id') if DB_ENGINE == 'postgres' else (
+                'shift_id' in [r[1] for r in schema_db.execute(f'PRAGMA table_info({table})')])
+            if not exists:
                 schema_db.execute(f'ALTER TABLE {table} ADD COLUMN shift_id TEXT REFERENCES cash_shifts(id)')
     # Clean start: no sample stores, employees, products, customers or sales.
     # The platform owner is initialized locally by setup_admin.py, never hard-coded.
@@ -255,6 +286,10 @@ def summarize(db,store):
     for sale in sales:
         sale['lines']=allrows(db,'SELECT id,product_id,name,qty,unit,price,cost FROM sale_items WHERE sale_id=?',(sale['id'],))
     payments=allrows(db,'SELECT dp.*,c.name AS customer_name FROM debt_payments dp JOIN customers c ON c.id=dp.customer_id WHERE dp.store_id=? ORDER BY dp.created_at DESC LIMIT 300',(store_id,))
+    debt_history=allrows(db,"""SELECT customer_id,created_at,'debt' AS kind,debt AS amount,id AS reference FROM sales WHERE store_id=? AND debt>0
+        UNION ALL SELECT customer_id,created_at,'payment' AS kind,amount AS amount,id AS reference FROM debt_payments WHERE store_id=?
+        UNION ALL SELECT customer_id,created_at,'return' AS kind,credit_reduction AS amount,id AS reference FROM sale_returns WHERE store_id=? AND credit_reduction>0
+        ORDER BY created_at DESC LIMIT 1000""",(store_id,store_id,store_id))
     bal=allrows(db,'SELECT c.id,c.name,c.phone, COALESCE((SELECT SUM(s.debt) FROM sales s WHERE s.customer_id=c.id),0)-COALESCE((SELECT SUM(d.amount) FROM debt_payments d WHERE d.customer_id=c.id),0)-COALESCE((SELECT SUM(r.credit_reduction) FROM sale_returns r WHERE r.customer_id=c.id),0) AS balance FROM customers c WHERE c.store_id=? ORDER BY c.name',(store_id,))
     returns=allrows(db,'SELECT r.*,s.client_id AS sale_reference,c.name AS customer_name,u.full_name AS processed_by_name FROM sale_returns r JOIN sales s ON s.id=r.sale_id LEFT JOIN customers c ON c.id=r.customer_id LEFT JOIN users u ON u.id=r.processed_by WHERE r.store_id=? ORDER BY r.created_at DESC LIMIT 140',(store_id,))
     for ret in returns:
@@ -276,8 +311,13 @@ def summarize(db,store):
     today_sales=allrows(db,'SELECT subtotal,created_at FROM sales WHERE store_id=? AND created_at>=?',(store_id,(datetime.now(timezone.utc)-timedelta(days=2)).isoformat()))
     today_returns=allrows(db,'SELECT total,created_at FROM sale_returns WHERE store_id=? AND created_at>=?',(store_id,(datetime.now(timezone.utc)-timedelta(days=2)).isoformat()))
     today=sum(v['subtotal'] for v in today_sales if datetime.fromisoformat(v['created_at']).astimezone(LOCAL_TZ).date()==date)-sum(v['total'] for v in today_returns if datetime.fromisoformat(v['created_at']).astimezone(LOCAL_TZ).date()==date)
-    stats={'today':round(today,2),'revenue':round(gross['total']-refunds['total'],2),'gross_sales':gross['total'],'returned_total':refunds['total'],'debt':round(sum(max(0,v['balance']) for v in bal),2), 'stock_value':round(sum(v['stock']*v['cost'] for v in p),2),'low_stock':len([v for v in p if v['stock']<=v['min_stock']]),'profit':round(all_profit-return_profit-exp_all,2), 'sale_count':gross['n']}
-    return {'store':store,'products':p,'customers':c,'sales':sales,'payments':payments,'balances':bal,'movements':move,'expenses':exp,'users':users,'audit':logs,'stats':stats,'shifts':shifts,'returns':returns,'features':features_for(db,store_id)}
+    day_start=datetime.combine(date,datetime.min.time(),LOCAL_TZ).astimezone(timezone.utc).isoformat()
+    day_end=datetime.combine(date+timedelta(days=1),datetime.min.time(),LOCAL_TZ).astimezone(timezone.utc).isoformat()
+    day_profit=onerow(db,'SELECT COALESCE(SUM(si.qty*(si.price-si.cost)),0) AS total FROM sale_items si JOIN sales s ON s.id=si.sale_id WHERE s.store_id=? AND s.created_at>=? AND s.created_at<?',(store_id,day_start,day_end))['total']
+    day_returns=onerow(db,'SELECT COALESCE(SUM(ri.qty*(ri.price-ri.cost)),0) AS total FROM return_items ri JOIN sale_returns r ON r.id=ri.return_id WHERE r.store_id=? AND r.created_at>=? AND r.created_at<?',(store_id,day_start,day_end))['total']
+    day_expenses=onerow(db,'SELECT COALESCE(SUM(amount),0) AS total FROM expenses WHERE store_id=? AND created_at>=? AND created_at<?',(store_id,day_start,day_end))['total']
+    stats={'today':round(today,2),'today_profit':round(day_profit-day_returns-day_expenses,2),'revenue':round(gross['total']-refunds['total'],2),'gross_sales':gross['total'],'returned_total':refunds['total'],'debt':round(sum(max(0,v['balance']) for v in bal),2), 'stock_value':round(sum(v['stock']*v['cost'] for v in p),2),'low_stock':len([v for v in p if v['stock']<=v['min_stock']]),'profit':round(all_profit-return_profit-exp_all,2), 'sale_count':gross['n']}
+    return {'store':store,'products':p,'customers':c,'sales':sales,'payments':payments,'debt_history':debt_history,'balances':bal,'movements':move,'expenses':exp,'users':users,'audit':logs,'stats':stats,'shifts':shifts,'returns':returns,'features':features_for(db,store_id)}
 
 
 def open_shift_for(db,store_id,user_id):
@@ -421,9 +461,10 @@ def bootstrap(request:Request,user=Depends(get_user)):
         data.update(extra)
         data['smart_insights']=smart_insights(data)
         if user['role'] not in ('owner','manager'):
-            for key in ('users','audit','expenses','supplier_bills'):
+            for key in ('users','audit','expenses','supplier_bills','supplier_payments','supplier_purchases'):
                 data.pop(key,None)
             data['stats'].pop('profit',None)
+            data['stats'].pop('today_profit',None)
         if user['role']=='seller':
             data.pop('supplier_bills',None)
             for product in data.get('products',[]): product.pop('cost',None)
@@ -432,7 +473,7 @@ def bootstrap(request:Request,user=Depends(get_user)):
             data.get('stats',{}).pop('stock_value',None)
             data['shifts']=[sh for sh in data['shifts'] if sh['cashier_id']==user['id']]
         if user['role']=='warehouse':
-            for key in ('payments','balances','sales','customers','returns','shifts','deliveries','supplier_bills','telegram'):
+            for key in ('payments','debt_history','balances','sales','customers','returns','shifts','deliveries','supplier_bills','supplier_payments','supplier_purchases','telegram'):
                 data.pop(key,None)
         stores=allrows(db,'SELECT id,name,phone,address,plan,status,created_at FROM stores WHERE id=?',(user['store_id'],))
     return {'user':user,'stores':stores,'data':data,'server_time':now()}
@@ -544,7 +585,7 @@ def add_product(payload:ProductIn,request:Request,user=Depends(get_user)):
         qty=money(payload.stock); minimum=money(payload.min_stock); price=money(payload.price); cost=money(payload.cost)
         pid=uid()
         try: db.execute('INSERT INTO products VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',(pid,store['id'],clean_name(payload.name),clean_name(payload.sku,40),payload.category[:70],payload.unit,price,cost,qty,minimum,1,now()))
-        except sqlite3.IntegrityError: http(409,'Bu shtrix-kod / SKU mavjud')
+        except INTEGRITY_ERRORS: http(409,'Bu shtrix-kod / SKU mavjud')
         branch=branch_for(db,store['id'],request)
         adjust_branch(db,store['id'],branch['id'],pid,qty)
         audit(db,store['id'],user,'PRODUCT_CREATED',{'id':pid,'name':payload.name})
@@ -559,7 +600,7 @@ def update_product(pid:str,payload:ProductIn,request:Request,user=Depends(get_us
         if payload.unit not in ('kg','qop','tonna','dona'):http(422,'O‘lchov noto‘g‘ri')
         try:
             db.execute('UPDATE products SET name=?,sku=?,category=?,unit=?,price=?,cost=?,min_stock=? WHERE id=?',(clean_name(payload.name),clean_name(payload.sku,40),payload.category[:70],payload.unit,money(payload.price),money(payload.cost),money(payload.min_stock),pid))
-        except sqlite3.IntegrityError: http(409,'SKU band')
+        except INTEGRITY_ERRORS: http(409,'SKU band')
         audit(db,store['id'],user,'PRODUCT_UPDATED',{'id':pid,'name':payload.name})
     return {'ok':True}
 
@@ -582,7 +623,7 @@ def add_customer(payload:CustomerIn,request:Request,user=Depends(get_user)):
         found=onerow(db,'SELECT id FROM customers WHERE id=? AND store_id=?',(cid,store['id']))
         if found:return {'ok':True,'id':cid,'duplicate':True}
         try: db.execute('INSERT INTO customers(id,store_id,name,phone,address,created_at) VALUES(?,?,?,?,?,?)',(cid,store['id'],clean_name(payload.name),payload.phone[:60],payload.address[:180],now()))
-        except sqlite3.IntegrityError: http(409,'Mijoz identifikatori band')
+        except INTEGRITY_ERRORS: http(409,'Mijoz identifikatori band')
         audit(db,store['id'],user,'CUSTOMER_CREATED',{'id':cid,'name':payload.name})
     return {'ok':True,'id':cid}
 
@@ -607,10 +648,12 @@ def create_sale(payload:SaleIn,request:Request,user=Depends(get_user)):
             if line.qty <= 0 or line.qty > 100000 or line.qty != line.qty:http(422,'Miqdor noto‘g‘ri')
             p=onerow(db,'SELECT * FROM products WHERE id=? AND store_id=? AND active=1',(line.product_id,store['id']))
             if not p:http(422,'Mahsulot yo‘q yoki o‘chirilgan')
-            if line.unit_price is not None and abs(line.unit_price-p['price'])>0.01:http(409,f"{p['name']}: narx o‘zgargan. Qayta tekshiring.")
+            if line.unit_price is None:http(422,f"{p['name']}: POS sotuv narxini kiriting")
+            unit_price=money(line.unit_price)
+            if unit_price<=0:http(422,f"{p['name']}: sotuv narxi musbat bo‘lishi kerak")
             if stock_at(db,store['id'],branch['id'],p['id'])+0.0000001<line.qty:http(409,f"{p['name']}: tanlangan filialda qoldiq yetarli emas")
-            calc.append((p,line.qty))
-            total+=round(p['price']*line.qty,2)
+            calc.append((p,line.qty,unit_price))
+            total+=round(unit_price*line.qty,2)
         total=round(total,2)
         cash=money(payload.cash_paid); card=money(payload.card_paid)
         if cash+card-total>0.01:http(422,'To‘langan summa savdodan katta')
@@ -625,11 +668,11 @@ def create_sale(payload:SaleIn,request:Request,user=Depends(get_user)):
         sid=uid()
         method='debt' if debt else ('mixed' if cash>0 and card>0 else 'card' if card>0 else 'cash')
         db.execute('INSERT INTO sales(id,store_id,cashier_id,customer_id,subtotal,cash_paid,card_paid,debt,method,client_id,created_at,shift_id,branch_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(sid,store['id'],user['id'],payload.customer_id,total,cash,card,debt,method,payload.client_id,now(),active_shift['id'],branch['id']))
-        for p,qty in calc:
+        for p,qty,unit_price in calc:
             adjust_branch(db,store['id'],branch['id'],p['id'],-qty)
             consume_lots(db,store['id'],branch['id'],p['id'],qty)
             db.execute('UPDATE products SET stock=stock-? WHERE id=? AND store_id=?',(qty,p['id'],store['id']))
-            db.execute('INSERT INTO sale_items VALUES(?,?,?,?,?,?,?,?)',(uid(),sid,p['id'],p['name'],qty,p['unit'],p['price'],p['cost']))
+            db.execute('INSERT INTO sale_items VALUES(?,?,?,?,?,?,?,?)',(uid(),sid,p['id'],p['name'],qty,p['unit'],unit_price,p['cost']))
             db.execute('INSERT INTO movements(id,store_id,product_id,delta,reason,note,created_at,user_id,branch_id) VALUES(?,?,?,?,?,?,?,?,?)',(uid(),store['id'],p['id'],-qty,'sotuv',f'Savdo #{sid[:8]}',now(),user['id'],branch['id']))
         audit(db,store['id'],user,'SALE_CREATED',{'id':sid,'total':total,'debt':debt,'customer':payload.customer_id})
     return {'ok':True,'id':sid,'total':total,'debt':debt}
@@ -714,10 +757,11 @@ def store_export(request:Request,user=Depends(get_user)):
         deliveries=allrows(db,'SELECT * FROM deliveries WHERE store_id=?',(sid,))
         supplier_bills=allrows(db,'SELECT * FROM supplier_bills WHERE store_id=?',(sid,))
         supplier_payments=allrows(db,'SELECT * FROM supplier_payments WHERE store_id=?',(sid,))
+        supplier_purchases=[]  # Legacy export field; this schema has no supplier_purchases table.
         transfers=allrows(db,'SELECT * FROM branch_transfers WHERE store_id=?',(sid,))
         telegram=allrows(db,'SELECT * FROM telegram_settings WHERE store_id=?',(sid,))
         logs=allrows(db,'SELECT * FROM audit WHERE store_id=?',(sid,))
-    return {'export_version':3,'exported_at':now(),'store':store,'products':products,'customers':customers,'sales':sales,'sale_items':items,'debt_payments':payments,'movements':movements,'expenses':expenses,'users':users,'cash_shifts':shifts,'sale_returns':refunds,'return_items':returned_items, 'branches':branches, 'branch_stock':branch_stock, 'inventory_lots':lots, 'deliveries':deliveries, 'supplier_bills':supplier_bills, 'supplier_payments':supplier_payments, 'branch_transfers':transfers, 'telegram_settings':telegram, 'audit':logs}
+    return {'export_version':4,'exported_at':now(),'store':store,'products':products,'customers':customers,'sales':sales,'sale_items':items,'debt_payments':payments,'movements':movements,'expenses':expenses,'users':users,'cash_shifts':shifts,'sale_returns':refunds,'return_items':returned_items, 'branches':branches, 'branch_stock':branch_stock, 'inventory_lots':lots, 'deliveries':deliveries, 'supplier_bills':supplier_bills, 'supplier_payments':supplier_payments, 'supplier_purchases':supplier_purchases, 'branch_transfers':transfers, 'telegram_settings':telegram, 'audit':logs}
 
 @app.post('/api/shifts/open')
 def shift_open(payload:ShiftOpen,request:Request,user=Depends(get_user)):
