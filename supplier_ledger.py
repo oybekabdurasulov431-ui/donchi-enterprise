@@ -55,6 +55,14 @@ def install(app):
         bills = allrows(db, 'SELECT * FROM supplier_bills WHERE store_id=? ORDER BY created_at DESC', (sid,))
         purchases = allrows(db, 'SELECT p.*,pr.name AS product_name FROM company_purchase_lines p JOIN products pr ON pr.id=p.product_id WHERE p.store_id=? ORDER BY p.created_at DESC LIMIT 1000', (sid,))
         payments = allrows(db, 'SELECT * FROM supplier_payments WHERE store_id=? ORDER BY created_at DESC LIMIT 1000', (sid,))
+        bill_index={b['id']:b for b in bills}
+        for purchase in purchases:
+            bill=bill_index.get(purchase['bill_id'])
+            purchase['bill_total']=float(bill['amount']) if bill else float(purchase['total'])
+            purchase['bill_paid']=float(bill['paid']) if bill else 0
+            purchase['bill_debt']=round(max(0,purchase['bill_total']-purchase['bill_paid']),2)
+            purchase['reference']=bill['reference'] if bill else ''
+            purchase['due_on']=bill['due_on'] if bill else None
         for c in companies:
             own = [b for b in bills if b['supplier']==c['name']]
             c['total'] = round(sum(float(b['amount']) for b in own),2)
@@ -166,6 +174,8 @@ def install(app):
             sales=allrows(db,'SELECT id,created_at,debt AS amount,subtotal FROM sales WHERE store_id=? AND customer_id=? AND debt>0',(shop['id'],customer_id))
             pays=allrows(db,'SELECT id,created_at,amount,method FROM debt_payments WHERE store_id=? AND customer_id=?',(shop['id'],customer_id))
             returns=allrows(db,'SELECT id,created_at,credit_reduction AS amount FROM sale_returns WHERE store_id=? AND customer_id=? AND credit_reduction>0',(shop['id'],customer_id))
+            for sale in sales:
+                sale['items']=allrows(db,'SELECT name,qty,unit,price FROM sale_items WHERE sale_id=?',(sale['id'],))
             timeline=[dict(x,kind='debt') for x in sales]+[dict(x,kind='payment') for x in pays]+[dict(x,kind='return') for x in returns]
             timeline.sort(key=lambda x:(x['created_at'], {'debt':0,'return':1,'payment':2}[x['kind']],x['id']))
             balance=0
