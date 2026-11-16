@@ -96,7 +96,7 @@ try:
                 page.locator('[data-a="new-product"]').first.click()
                 page.locator('#modal-form input[name="name"]').fill("Browser Product")
                 page.locator('#modal-form input[name="sku"]').fill("BROWSER-001")
-                page.locator('#modal-form input[name="price"]').fill("12000")
+                assert page.locator('#modal-form input[name="price"]').count()==0, "Product sale price should be set at POS"
                 page.locator('#modal-form input[name="cost"]').fill("8000")
                 page.locator('#modal-form input[name="stock"]').fill("4")
                 with page.expect_response(lambda r:
@@ -130,7 +130,7 @@ try:
             ["platform","releases-admin","inquiries","platform-settings"])
         check_role("/app/","owner_smoke",OWNER_PASSWORD,
             ["dashboard","pos","shifts","returns","products","inventory",
-             "lots","branches","deliveries","debts","customers","crm","finance",
+             "lots","branches","deliveries","debts","companies","customers","crm","finance",
              "insights","telegram","updates","security","analytics","team","settings","sync"])
         check_role("/app/","seller_smoke",OWNER_PASSWORD,
             ["pos","shifts","deliveries","debts","customers","updates","sync"])

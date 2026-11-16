@@ -75,6 +75,18 @@ class HandlersRegression(unittest.TestCase):
         self.ok(owner.post("/api/users",json={"username":"seller_regression","full_name":"Seller","role":"seller","password":"OnlyTest_Seller_2026!"}))
         product=self.ok(owner.post("/api/products",json={"name":"Feed","sku":"FEED-001","unit":"qop","price":90000,"cost":60000,"stock":10,"min_stock":1}))["id"]
         customer=self.ok(owner.post("/api/customers",json={"name":"Client One","phone":"998900000001"}))["id"]
+        company=self.ok(owner.post("/api/v6/companies",json={"name":"Factory Alpha","phone":"998901111111"}))["id"]
+        purchase=self.ok(owner.post("/api/v6/purchases",json={
+            "company_id":company,"reference":"INV-001",
+            "lines":[{"product_id":product,"qty":3,"unit_cost":40000}],"paid":20000
+        }))
+        self.assertEqual(purchase["total"],120000)
+        self.assertEqual(purchase["debt"],100000)
+        supplier=self.ok(owner.get("/api/v6/companies"))["companies"][0]
+        self.assertEqual(supplier["debt"],100000)
+        self.ok(owner.post(f"/api/v6/companies/{company}/pay",json={"amount":30000}))
+        self.assertEqual(self.ok(owner.get("/api/v6/companies"))["companies"][0]["debt"],70000)
+        self.ok(owner.post(f"/api/v6/companies/{company}/pay",json={"amount":80000}),422)
         original_branch=self.ok(owner.get("/api/bootstrap"))["data"]["branches"][0]["id"]
         second_branch=self.ok(owner.post("/api/v5/branches",json={"name":"Second Branch","address":"Demo street"}))["id"]
         self.ok(owner.post("/api/v5/branches/transfer",json={
@@ -96,6 +108,10 @@ class HandlersRegression(unittest.TestCase):
         }))
         self.assertIn("id",sale)
         self.ok(owner.post("/api/debts/pay",json={"client_id":str(uuid.uuid4()),"customer_id":customer,"amount":50000,"method":"cash"}))
+        ledger=self.ok(owner.get(f"/api/v6/customers/{customer}/ledger"))
+        self.assertEqual(ledger["balance"],30000)
+        self.assertEqual([v["kind"] for v in ledger["entries"]],["payment","debt"])
+        self.ok(owner.get("/api/v6/today"))
         self.ok(owner.post("/api/inventory/adjust",json={"product_id":product,"delta":2,"reason":"Kirim"}))
         self.ok(owner.get("/api/bootstrap"))
         self.ok(owner.post("/api/expenses",json={"category":"Rent","amount":3000,"note":"test"}))
