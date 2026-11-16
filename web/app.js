@@ -601,6 +601,15 @@ document.addEventListener('input',e=>{
    const value=t.value;state.query=value;const name=t.id;const pos=t.selectionStart;render();const newInput=$('#'+name);if(newInput){newInput.focus();newInput.setSelectionRange(pos,pos)}
  }
 });
+// Check for the 21:00 report without requiring a manual page refresh.
+setInterval(async()=>{
+ if(!session||!navigator.onLine||!can('owner','manager'))return;
+ try{
+   const before=state.notificationUnread;
+   await refreshNotifications();
+   if(before!==state.notificationUnread&&(state.view==='notifications'||state.view==='dashboard'))render();
+ }catch(e){console.warn('Notification refresh:',e)}
+},60000);
 window.addEventListener('online',()=>{state.online=true;syncQueue()});
 window.addEventListener('offline',()=>{state.online=false;render()});
 window.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.modal)closeModal();if(e.ctrlKey&&e.key.toLowerCase()==='k'){e.preventDefault();const input=$('#pos-search')||$('#product-search');if(input)input.focus()}});
