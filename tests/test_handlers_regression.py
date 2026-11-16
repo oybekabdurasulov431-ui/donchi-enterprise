@@ -74,6 +74,16 @@ class HandlersRegression(unittest.TestCase):
         self.ok(owner.put("/api/settings",json={"name":"Demo Shop Updated","phone":"998900000000"}))
         self.ok(owner.post("/api/users",json={"username":"seller_regression","full_name":"Seller","role":"seller","password":"OnlyTest_Seller_2026!"}))
         product=self.ok(owner.post("/api/products",json={"name":"Feed","sku":"FEED-001","unit":"qop","price":90000,"cost":60000,"stock":10,"min_stock":1}))["id"]
+        purchased=self.ok(owner.post('/api/v5/supplier-purchases',json={
+            'supplier':'Factory A','reference':'INV-15','product_id':product,'qty':3,'unit_cost':40000,'paid':20000
+        }))
+        self.assertEqual(purchased['amount'],120000)
+        self.assertEqual(purchased['debt'],100000)
+        after_purchase=self.ok(owner.get('/api/bootstrap'))['data']
+        self.assertEqual(next(p for p in after_purchase['products'] if p['id']==product)['stock'],13)
+        self.assertEqual(next(b for b in after_purchase['supplier_bills'] if b['id']==purchased['bill_id'])['paid'],20000)
+        self.assertTrue(after_purchase['supplier_purchases'])
+        self.assertTrue(after_purchase['supplier_payments'])
         customer=self.ok(owner.post("/api/customers",json={"name":"Client One","phone":"998900000001"}))["id"]
         original_branch=self.ok(owner.get("/api/bootstrap"))["data"]["branches"][0]["id"]
         second_branch=self.ok(owner.post("/api/v5/branches",json={"name":"Second Branch","address":"Demo street"}))["id"]
@@ -92,7 +102,7 @@ class HandlersRegression(unittest.TestCase):
         self.ok(owner.post("/api/shifts/open",json={"opening_cash":1000}))
         sale=self.ok(owner.post("/api/sales",json={
             "client_id":str(uuid.uuid4()),"customer_id":customer,
-            "lines":[{"product_id":product,"qty":2}],"cash_paid":100000,"card_paid":0
+            "lines":[{"product_id":product,"qty":2,"unit_price":90000}],"cash_paid":100000,"card_paid":0
         }))
         self.assertIn("id",sale)
         self.ok(owner.post("/api/debts/pay",json={"client_id":str(uuid.uuid4()),"customer_id":customer,"amount":50000,"method":"cash"}))
@@ -171,13 +181,14 @@ class HandlersRegression(unittest.TestCase):
         self.ok(alpha.post("/api/shifts/open", json={"opening_cash": 0}))
         client_id = str(uuid.uuid4())
         sale = {
-            "client_id": client_id, "lines": [{"product_id": pid, "qty": 2}],
-            "cash_paid": 200, "card_paid": 0
+            "client_id": client_id, "lines": [{"product_id": pid, "qty": 2, "unit_price": 120}],
+            "cash_paid": 240, "card_paid": 0
         }
         self.ok(alpha.post("/api/sales", json=sale), 409)  # cannot oversell
         sale["lines"][0]["qty"] = 1
-        sale["cash_paid"] = 100
+        sale["cash_paid"] = 120
         first = self.ok(alpha.post("/api/sales", json=sale))
+        self.assertEqual(first['total'],120)
         second = self.ok(alpha.post("/api/sales", json=sale))
         self.assertEqual(first["id"], second["id"])
         self.assertTrue(second.get("duplicate"))
@@ -332,7 +343,7 @@ class HandlersRegression(unittest.TestCase):
         }),403)
         self.ok(warehouse.post("/api/shifts/open",json={"opening_cash":0}),403)
         self.ok(warehouse.post("/api/sales",json={
-            "client_id":str(uuid.uuid4()),"lines":[{"product_id":product,"qty":1}],
+            "client_id":str(uuid.uuid4()),"lines":[{"product_id":product,"qty":1,"unit_price":90000}],
             "cash_paid":100
         }),403)
         self.ok(warehouse.post("/api/inventory/adjust",json={
@@ -389,7 +400,8 @@ class HandlersRegression(unittest.TestCase):
         self.assertEqual(self.admin.get("/icon-192.png").content[:8],b"\x89PNG\r\n\x1a\n")
         source=self.admin.get("/sw.js").text
         self.assertIn("url.pathname.startsWith('/api/')",source)
-        self.assertIn("donchi-enterprise-v2.0.0",source)
+        self.assertIn("donchi-enterprise-v2.1.0",source)
+        self.assertIn("/enterprise.js?v=1.0.0",source)
 
 
 if __name__=="__main__":
