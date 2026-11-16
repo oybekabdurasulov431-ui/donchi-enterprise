@@ -758,7 +758,7 @@ def store_export(request:Request,user=Depends(get_user)):
         deliveries=allrows(db,'SELECT * FROM deliveries WHERE store_id=?',(sid,))
         supplier_bills=allrows(db,'SELECT * FROM supplier_bills WHERE store_id=?',(sid,))
         supplier_payments=allrows(db,'SELECT * FROM supplier_payments WHERE store_id=?',(sid,))
-        supplier_purchases=allrows(db,'SELECT * FROM supplier_purchases WHERE store_id=?',(sid,))
+        supplier_purchases=allrows(db,'SELECT * FROM company_purchase_lines WHERE store_id=?',(sid,))
         transfers=allrows(db,'SELECT * FROM branch_transfers WHERE store_id=?',(sid,))
         telegram=allrows(db,'SELECT * FROM telegram_settings WHERE store_id=?',(sid,))
         logs=allrows(db,'SELECT * FROM audit WHERE store_id=?',(sid,))
@@ -906,6 +906,7 @@ def update_inquiry(inquiry_id:str,payload:InquiryStatus,user=Depends(get_user)):
 
 extra_summary,smart_insights,branch_for,stock_at,adjust_branch,consume_lots = __import__('v5_features').install(app)
 __import__('supplier_ledger').install(app)
+__import__('history_notifications').install(app)
 
 @app.get('/api/health')
 def health():
