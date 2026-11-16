@@ -1,5 +1,4 @@
 """DONCHI supplier companies, purchase-cost ledger and customer debt timeline."""
-from __future__ import annotations
 from typing import Optional
 from pydantic import BaseModel, Field
 from fastapi import Request, Depends
