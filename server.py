@@ -758,7 +758,7 @@ def store_export(request:Request,user=Depends(get_user)):
         deliveries=allrows(db,'SELECT * FROM deliveries WHERE store_id=?',(sid,))
         supplier_bills=allrows(db,'SELECT * FROM supplier_bills WHERE store_id=?',(sid,))
         supplier_payments=allrows(db,'SELECT * FROM supplier_payments WHERE store_id=?',(sid,))
-        supplier_purchases=allrows(db,'SELECT * FROM supplier_purchases WHERE store_id=?',(sid,))
+        supplier_purchases=allrows(db,'SELECT * FROM company_purchase_lines WHERE store_id=?',(sid,))
         transfers=allrows(db,'SELECT * FROM branch_transfers WHERE store_id=?',(sid,))
         telegram=allrows(db,'SELECT * FROM telegram_settings WHERE store_id=?',(sid,))
         logs=allrows(db,'SELECT * FROM audit WHERE store_id=?',(sid,))
