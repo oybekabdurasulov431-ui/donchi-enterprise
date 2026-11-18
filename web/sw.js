@@ -1,10 +1,10 @@
 /* DONCHI 2.0 safe offline shell; no auth API responses or user data cached. */
-const CACHE='donchi-enterprise-v2.3.1';
+const CACHE='donchi-enterprise-v2.3.2';
 const SHELL=[
   '/', '/index.html', '/app/', '/platform/', '/platform/settings.html',
   '/site/','/site/style.css',
   '/style.css?v=2.0.0', '/premium.css?v=2.1.0',
-  '/app.js?v=2.3.1','/v5.js?v=1.2.0','/pwa-install.js?v=2.0.0',
+  '/app.js?v=2.3.2','/v5.js?v=1.2.0','/pwa-install.js?v=2.0.0',
   '/platform-admin.js?v=1.2.0','/platform-admin.css?v=2.0.0',
   '/platform/settings.js?v=1.3.0','/icon.svg','/icon-192.png','/icon-512.png','/manifest.webmanifest'
 ];

@@ -448,7 +448,7 @@ class HandlersRegression(unittest.TestCase):
         self.assertEqual(self.admin.get("/icon-192.png").content[:8],b"\x89PNG\r\n\x1a\n")
         source=self.admin.get("/sw.js").text
         self.assertIn("url.pathname.startsWith('/api/')",source)
-        self.assertIn("donchi-enterprise-v2.3.1",source)
+        self.assertIn("donchi-enterprise-v2.3.2",source)
 
 
 if __name__=="__main__":

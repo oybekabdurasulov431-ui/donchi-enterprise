@@ -517,7 +517,7 @@ function printReceipt(receipt=state.lastReceipt,{test=false}={}){
  const items=lines.map(i=>{const p=state.data?.products?.find(x=>x.id===i.product_id),price=Number(i.unit_price??p?.price??0),qty=Number(i.qty||0);return `<div class="item"><div class="item-name">${esc(i.name||p?.name||'Mahsulot')}</div><div class="item-numbers"><span>${esc(fmt(qty))} × ${esc(som(price))}</span><b>${esc(som(qty*price))}</b></div></div>`}).join('');
  const isDebt=Number(receipt.debt)>0.009;
  const html=`<!doctype html><html lang="uz"><head><meta charset="utf-8"><title>Chek — ${esc(receipt.storeName||'DONCHI')}</title><style>
- @page{size:${paper}mm auto;margin:0}
+ /* The exact roll height is injected after content measurement. */
  *{box-sizing:border-box}html,body{margin:0;padding:0;width:${paper}mm;min-height:0;height:auto;overflow:visible;background:#fff;color:#000}
  body{font-family:Arial,'DejaVu Sans',sans-serif;font-size:${paper===58?'10':'12'}px;line-height:1.34;-webkit-print-color-adjust:exact;print-color-adjust:exact}
  .receipt{width:${paper}mm;padding:2mm 2.5mm 1mm;margin:0;overflow-wrap:anywhere}
@@ -534,6 +534,13 @@ function printReceipt(receipt=state.lastReceipt,{test=false}={}){
  document.querySelector('#donchi-receipt-frame')?.remove();
  const frame=document.createElement('iframe');frame.id='donchi-receipt-frame';frame.setAttribute('aria-hidden','true');frame.style.cssText='position:fixed;left:-10000px;top:0;width:1px;height:1px;border:0;opacity:0';document.body.appendChild(frame);
  const doc=frame.contentDocument;doc.open();doc.write(html);doc.close();
+ // 'size: 58mm auto' is invalid CSS and silently falls back to a full-length page.
+ // Measure the rendered receipt and set an explicit roll page height before printing.
+ const contentHeightPx=doc.querySelector('.receipt').getBoundingClientRect().height;
+ const contentHeightMm=Math.max(35,Math.ceil(contentHeightPx*25.4/96)+3);
+ const pageRule=doc.createElement('style');
+ pageRule.textContent=`@page { size: ${paper}mm ${contentHeightMm}mm; margin: 0; }`;
+ doc.head.appendChild(pageRule);
  if(!test){closeModal();state.view='pos';render()}
  const clean=()=>{if(frame.isConnected)frame.remove()};
  frame.contentWindow.addEventListener('afterprint',()=>setTimeout(clean,1000),{once:true});
