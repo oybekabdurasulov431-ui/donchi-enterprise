@@ -328,7 +328,7 @@ function salesHistoryPage(){
  stat('Naqd',som(list.reduce((a,s)=>a+num(s.cash_paid),0)),'Ko‘rsatilgan savdolar','wallet')+
  stat('Karta',som(list.reduce((a,s)=>a+num(s.card_paid),0)),'Ko‘rsatilgan savdolar','wallet','blue')+
  stat('Nasiya',som(list.reduce((a,s)=>a+num(s.debt),0)),'Ko‘rsatilgan savdolar','wallet','orange')+'</div>'+
- list.map(s=>'<div class="panel mt"><div class="panel-head"><div><h3>#'+esc(s.id.slice(0,8).toUpperCase())+' — '+som(s.subtotal)+'</h3><p>'+dt(s.created_at)+' · '+esc(s.customer_name||'Oddiy mijoz')+' · Kassir: '+esc(s.cashier_name||'—')+'</p></div>'+badge(s.payment_label||s.method,'blue')+'</div>'+
+ list.map(s=>'<div class="panel mt"><div class="panel-head"><div><h3>#'+esc(s.id.slice(0,8).toUpperCase())+' — '+som(s.subtotal)+'</h3><p>'+dt(s.created_at)+' · '+esc(s.customer_name||'Oddiy mijoz')+' · Kassir: '+esc(s.cashier_name||'—')+'</p></div><div class="actions">'+badge(s.payment_label||s.method,'blue')+' <button class="btn sm secondary" data-a="sales-history-print" data-id="'+esc(s.id)+'">'+ico('receipt',15)+' Chekni qayta chiqarish</button></div></div>'+
  table(['MAHSULOT','MIQDOR','DONASI','JAMI'],(s.lines||[]).map(l=>'<tr><td>'+esc(l.name)+'</td><td>'+fmt(l.qty)+' '+esc(l.unit)+'</td><td>'+som(l.price)+'</td><td>'+som(num(l.qty)*num(l.price))+'</td></tr>'))+
  '<div class="panel-body">Naqd: <b>'+som(s.cash_paid)+'</b> · Karta: <b>'+som(s.card_paid)+'</b> · Nasiya: <b>'+som(s.debt)+'</b></div></div>').join('')+
  (list.length<state.salesHistoryTotal?'<div class="mt"><button class="btn secondary" data-a="sales-history-more">Yana 100 ta yuklash</button></div>':'');
@@ -508,7 +508,11 @@ async function makeSale(){if(!ownShift())return toast('Avval kassa smenasini och
     return {product_id,qty,unit_price:num(state.cartPrices[product_id]),name:item.name};
   });
   const payload={client_id:id(),lines:saleItems.map(({product_id,qty,unit_price})=>({product_id,qty,unit_price})),cash_paid:cash,card_paid:card,customer_id:state.posCustomer||null};
-  try{const r=await mutate('/sales',payload,{offlineType:'sale'});const customer=state.data.customers.find(c=>c.id===payload.customer_id);state.lastReceipt={id:r.id||payload.client_id,total,debt,payload,items:saleItems,offline:r.offline,at:new Date().toISOString(),storeName:state.data.store.name,customerName:customer?.name||'',cash,card};state.cart={};state.cartPrices={};state.payMode='cash';state.posCustomer='';openModal('receipt',state.lastReceipt)}catch(e){toast(e.message||'Savdo amalga oshmadi',true)}
+  try{const r=await mutate('/sales',payload,{offlineType:'sale'});const customer=state.data.customers.find(c=>c.id===payload.customer_id);const currentDebt=state.data.balances?.find(b=>b.id===payload.customer_id)?.balance;state.lastReceipt={id:r.result?.id||payload.client_id,total,debt,payload,items:saleItems,offline:r.offline,at:new Date().toISOString(),storeName:state.data.store.name,customerName:customer?.name||'',customerId:payload.customer_id,cash,card,currentDebt:debt>0&&Number.isFinite(Number(currentDebt))?Number(currentDebt):null};state.cart={};state.cartPrices={};state.payMode='cash';state.posCustomer='';openModal('receipt',state.lastReceipt)}catch(e){toast(e.message||'Savdo amalga oshmadi',true)}
+}
+function historyReceipt(s){
+ const balance=state.data?.balances?.find(b=>b.id===s.customer_id)?.balance;
+ return {id:s.id,storeName:state.data?.store?.name||'DONCHI',at:s.created_at,customerId:s.customer_id,customerName:s.customer_name||'',items:(s.lines||[]).map(l=>({product_id:l.product_id,name:l.name,qty:l.qty,unit_price:l.price})),total:Number(s.subtotal)||0,cash:Number(s.cash_paid)||0,card:Number(s.card_paid)||0,debt:Number(s.debt)||0,currentDebt:Number.isFinite(Number(balance))&&balance!=null?Number(balance):null};
 }
 function printReceipt(receipt=state.lastReceipt,{test=false}={}){
  if(!receipt)return toast('Chop etiladigan chek topilmadi',true);
@@ -529,7 +533,7 @@ function printReceipt(receipt=state.lastReceipt,{test=false}={}){
  .item-numbers b,.detail b{white-space:nowrap;text-align:right}.total{font-weight:900;font-size:14px}
  .footer{text-align:center;margin:2mm 0 0;padding:0;font-weight:700;overflow-wrap:anywhere}
  @media print{html,body{margin:0!important;padding:0!important}.receipt{break-after:avoid;page-break-after:avoid}}
- </style></head><body><main class="receipt"><h1 class="shop">${esc(receipt.storeName||state.data?.store?.name||'DONCHI')}</h1><div class="center muted">${esc(dt(receipt.at||new Date().toISOString()))}</div><div class="center muted">Chek: ${esc(receipt.id||'—')}</div>${test?'<div class="status">SINOV CHEKI</div>':`<div class="status">${isDebt?'QARZ / NASIYA':'TO‘LANGAN'}</div>`}${receipt.customerName?`<div>Mijoz: <b>${esc(receipt.customerName)}</b></div>`:''}<hr class="separator">${items}<hr class="separator"><div class="detail total"><span>JAMI</span><b>${esc(som(receipt.total||0))}</b></div><div class="detail"><span>Naqd</span><b>${esc(som(receipt.cash||0))}</b></div><div class="detail"><span>Karta</span><b>${esc(som(receipt.card||0))}</b></div><div class="detail"><span>Nasiya</span><b>${esc(som(receipt.debt||0))}</b></div>${receipt.offline?'<div class="muted">OFFLINE — internet qaytgach sinxronlanadi</div>':''}<hr class="separator"><p class="footer">${esc(printer.footer)}</p></main></body></html>`;
+ </style></head><body><main class="receipt"><h1 class="shop">${esc(receipt.storeName||state.data?.store?.name||'DONCHI')}</h1><div class="center muted">${esc(dt(receipt.at||new Date().toISOString()))}</div><div class="center muted">Chek: ${esc(receipt.id||'—')}</div>${test?'<div class="status">SINOV CHEKI</div>':`<div class="status">${isDebt?'QARZ / NASIYA':'TO‘LANGAN'}</div>`}${receipt.customerName?`<div>Mijoz: <b>${esc(receipt.customerName)}</b></div>`:''}<hr class="separator">${items}<hr class="separator"><div class="detail total"><span>JAMI</span><b>${esc(som(receipt.total||0))}</b></div><div class="detail"><span>Naqd</span><b>${esc(som(receipt.cash||0))}</b></div><div class="detail"><span>Karta</span><b>${esc(som(receipt.card||0))}</b></div><div class="detail"><span>Nasiya</span><b>${esc(som(receipt.debt||0))}</b></div>${isDebt&&receipt.currentDebt!=null?`<hr class="separator"><div class="detail total"><span>Jami joriy qarz</span><b>${esc(som(receipt.currentDebt))}</b></div>`:''}${receipt.offline?'<div class="muted">OFFLINE — internet qaytgach sinxronlanadi</div>':''}<hr class="separator"><p class="footer">${esc(printer.footer)}</p></main></body></html>`;
  // A hidden iframe keeps the operator in POS; Chrome/Windows still controls the printer dialog.
  document.querySelector('#donchi-receipt-frame')?.remove();
  const frame=document.createElement('iframe');frame.id='donchi-receipt-frame';frame.setAttribute('aria-hidden','true');frame.style.cssText='position:fixed;left:-10000px;top:0;width:1px;height:1px;border:0;opacity:0';document.body.appendChild(frame);
@@ -541,7 +545,7 @@ function printReceipt(receipt=state.lastReceipt,{test=false}={}){
  const pageRule=doc.createElement('style');
  pageRule.textContent=`@page { size: ${paper}mm ${contentHeightMm}mm; margin: 0; }`;
  doc.head.appendChild(pageRule);
- if(!test){closeModal();state.view='pos';render()}
+ if(!test){closeModal();if(state.view!=='sales-history')state.view='pos';render()}
  const clean=()=>{if(frame.isConnected)frame.remove()};
  frame.contentWindow.addEventListener('afterprint',()=>setTimeout(clean,1000),{once:true});
  setTimeout(clean,120000);
@@ -592,6 +596,11 @@ async function doAction(el){const a=el.dataset.a,mid=el.dataset.id;
   if(a==='notifications-refresh'){await refreshNotifications();render();return}
   if(a==='sales-history-refresh'){await refreshSalesHistory(true);render();return}
   if(a==='sales-history-more'){await refreshSalesHistory();render();return}
+  if(a==='sales-history-print'){
+    const sale=state.salesHistory.find(s=>s.id===mid);if(!sale)return toast('Savdo topilmadi',true);
+    if(sale.debt>0&&state.online){try{const fresh=await request('/bootstrap');if(fresh.data?.balances)state.data.balances=fresh.data.balances}catch(e){console.warn('Joriy qarz olinmadi',e)}}
+    printReceipt(historyReceipt(sale));return;
+  }
   if(a==='customer-ledger'){await showCustomerLedger(mid);return}
   if(a==='company-refresh'){await refreshCompanies();render();return}
   if(a==='purchase-line-add'){document.querySelector('#purchase-lines')?.insertAdjacentHTML('beforeend',purchaseLineHtml());return}
