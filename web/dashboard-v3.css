@@ -109,3 +109,36 @@
  .content:has(> .stats-grid):has(.legend) > .stats-grid .stat:hover{transform:none}
  }
 }
+
+/* Premium overview hero — data remains bound to existing server values. */
+.layout[data-view="dashboard"] .content .dash-welcome{
+ display:flex;align-items:center;justify-content:space-between;gap:20px;
+ position:relative;overflow:hidden;isolation:isolate;
+ min-height:168px;padding:clamp(24px,3vw,38px);margin-bottom:20px;
+ border:1px solid #ffffff17;border-radius:24px;
+ background:linear-gradient(115deg,#10243b 0%,#123949 52%,#087c67 100%);
+ color:#fff;box-shadow:0 18px 40px #0b314020;
+}
+.layout[data-view="dashboard"] .content .dash-welcome:after{
+ content:"";position:absolute;inset:auto -78px -155px auto;
+ width:350px;height:350px;border:60px solid #ffffff0c;border-radius:50%;z-index:-1;
+}
+.layout[data-view="dashboard"] .dash-welcome-kicker{
+ color:#78edc8;font-size:11px;font-weight:850;letter-spacing:.14em;
+}
+.layout[data-view="dashboard"] .dash-welcome h2{
+ margin:10px 0 7px;font-size:clamp(25px,3vw,37px);letter-spacing:-.045em;line-height:1.12;
+}
+.layout[data-view="dashboard"] .dash-welcome p{
+ color:#c2dfda;font-size:13px;line-height:1.6;margin:0;
+}
+.layout[data-view="dashboard"] .dash-welcome-mark{
+ width:78px;height:78px;display:grid;place-items:center;flex:none;
+ border-radius:22px;background:#ffffff16;border:1px solid #ffffff29;color:#80f5ce;
+}
+@media(max-width:600px){
+ .layout[data-view="dashboard"] .content .dash-welcome{
+  min-height:0;border-radius:19px;padding:22px 19px;margin-bottom:15px;
+ }
+ .layout[data-view="dashboard"] .dash-welcome-mark{display:none}
+}
