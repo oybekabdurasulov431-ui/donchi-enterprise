@@ -908,6 +908,7 @@ extra_summary,smart_insights,branch_for,stock_at,adjust_branch,consume_lots = __
 __import__('supplier_ledger').install(app)
 __import__('history_notifications').install(app)
 __import__('catalog_contacts').install(app)
+__import__('enterprise_v4').install(app, get_user, connection, allrows, onerow, role, http, now)
 
 @app.get('/api/health')
 def health():

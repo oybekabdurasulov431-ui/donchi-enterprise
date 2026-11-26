@@ -1,0 +1,30 @@
+name: DONCHI Enterprise 4.0 isolated checks
+on:
+  pull_request:
+    paths:
+      - 'enterprise_v4.py'
+      - 'server.py'
+      - 'tests/test_enterprise_v4.py'
+      - '.github/workflows/enterprise-v4.yml'
+  push:
+    branches:
+      - 'feature/enterprise-4-command-center'
+    paths:
+      - 'enterprise_v4.py'
+      - 'server.py'
+      - 'tests/test_enterprise_v4.py'
+      - '.github/workflows/enterprise-v4.yml'
+jobs:
+  isolated-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install 'fastapi>=0.115,<1' 'httpx>=0.27,<1'
+      - name: Check Python syntax
+        run: python -m py_compile enterprise_v4.py server.py tests/test_enterprise_v4.py
+      - name: Test tenant isolation and authorization
+        run: python -m unittest discover -s tests -p 'test_enterprise_v4.py' -v
